@@ -44,6 +44,9 @@ def format_question(row: dict) -> str:
                   f"执行状态：{row['status']}", f"错误及问题编号：{row.get('error', '无')}；{row.get('issue_id', '无')}",
                   f"评测结果：{json.dumps(row['metrics'], ensure_ascii=False)}",
                   f"实际输入图片：{json.dumps(row.get('image_paths', []), ensure_ascii=False)}", ""])
+    if "display_answer" in row:
+        lines.extend([f"对用户展示：{row['display_answer']}",
+                      f"展示来源：{', '.join(source['label'] for source in row.get('display_sources',[])) or '无'}",""])
     return "\n".join(lines) + "\n"
 
 

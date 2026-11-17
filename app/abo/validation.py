@@ -99,7 +99,8 @@ def run_validation(session, result_path, *, require=False):
 
 def run_category_validation(session, result_path):
     """Verify selection and follow-up for one actual item in every source category."""
-    from full_catalogue import overview_items
+    from catalog_labels_zh import CATEGORY_LABELS
+    from full_catalogue import normalize_search, overview_items
 
     database = session.app.retriever
     checks = []
@@ -112,14 +113,52 @@ def run_category_validation(session, result_path):
         picked = session.respond(key)
         first = session.respond("这款的属性")
         last = session.respond("把全部资料完整展示出来")
+        phrase=f"我想查{CATEGORY_LABELS[category]}这类商品"
+        search=normalize_search(phrase,database.manifest)
         expected = {field["item_id"] for field in overview_items(item,{"pages":[]},include_title_dimension=True)}
         actual = {claim["item_id"] for claim in last.get("claims",[])}
         passed = (picked["decision"]=="selected" and first["decision"]==last["decision"]=="answer"
                   and last["current_listing_keys_after"]==[key] and bool(last["citations"])
-                  and expected==actual and all(claim["listing_key"]==key for claim in last.get("claims",[])))
+                  and expected==actual and all(claim["listing_key"]==key for claim in last.get("claims",[]))
+                  and category in search["inferred_product_types"])
         checks.append({"category":category,"listing_key":key,"passed":passed,
                        "expected_items":len(expected),"actual_items":len(actual)})
     summary = {"categories":len(checks),"passed":sum(row["passed"] for row in checks),"checks":checks}
     Path(result_path).write_text(json.dumps(summary,ensure_ascii=False,indent=2)+"\n","utf-8")
     assert summary["passed"]==summary["categories"]==576, [row for row in checks if not row["passed"]][:12]
     return summary
+
+
+def run_presentation_validation(session, result_path):
+    from app.abo.presentation import KEY
+
+    session.respond("重置")
+    turns = (
+        ("我想查询电风扇这类商品","AmazonBasics","第一款"),
+        (FAN,"Portable Tower Fan","继续问"),
+        ("帮我看一下这个属性"+FAN,"颜色是 White","完整展示"),
+        ("还有呢给我完整的展示出来","Portable Tower Fan","商品原文"),
+        (COFFEE+" 和 "+OTHER+" 哪款更重","AmazonFresh","重量"),
+        (COFFEE+" 和 "+OTHER+" 哪款更贵","无法判断","ABO"),
+        ("Amazon.com 的退货政策是什么","官方快照","退货"),
+    )
+    checks=[]
+    for question,first,second in turns:
+        row=session.respond(question)
+        answer=row["display_answer"]
+        citations=row["display_sources"]
+        passed=(first in answer and second in answer and not KEY.search(answer)
+                and all(not KEY.search(source["label"]) for source in citations)
+                and [source["citation"] for source in citations]==row["citations"])
+        if "查询电风扇" in question:
+            passed &= {item["product_type"] for item in row["catalog_items"]}=={"ELECTRIC_FAN"}
+        checks.append({"question":question,"passed":passed,"display_answer":answer,
+                       "display_sources":citations,"original_answer":row["answer"]})
+    session.respond(FAN)
+    row=session.respond("这款商品的编号是什么")
+    checks.append({"question":row["question"],"passed":FAN in row["display_answer"],
+                   "display_answer":row["display_answer"],"original_answer":row["answer"]})
+    result={"cases":len(checks),"passed":sum(item["passed"] for item in checks),"checks":checks}
+    Path(result_path).write_text(json.dumps(result,ensure_ascii=False,indent=2)+"\n","utf-8")
+    assert result["passed"]==result["cases"], [item for item in checks if not item["passed"]]
+    return result

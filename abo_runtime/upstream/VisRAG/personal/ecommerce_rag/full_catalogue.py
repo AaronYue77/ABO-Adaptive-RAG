@@ -64,7 +64,8 @@ SEARCH_REQUEST = re.compile(
 
 
 def exact_category_types(text,manifest):
-    key = re.sub(r'(?:类的?(?:商品|产品)?|的(?:商品|产品)|类目|分类|商品|产品)$','',text.strip(" \t。?!？！")).strip()
+    key = re.sub(r'(?:(?:这|那)(?:一)?(?:类|种)(?:的?(?:商品|产品))?|类的?(?:商品|产品)?'
+                 r'|的(?:商品|产品)|类目|分类|商品|产品)$','',text.strip(" \t。?!？！")).strip()
     product_types = manifest['product_types']
     for candidate in (text.strip(" \t。?!？！"),key):
         if candidate.upper() in product_types:
@@ -158,9 +159,9 @@ def normalize_search(text,manifest,filters=None,*,separate_terms=True):
     if request:query=request[1]
     query=re.sub(r'^(?:选中|选择|就要|就|选)\s*','',query)
     query=re.sub(r'[呢吧？?！!。\s]+$','',query)
-    query=re.sub(r'(?:类的?商品|类的?产品|类商品|类产品|商品|产品)[？?。\s]*$','',query).strip()
-    inferred=[];matched=None
     exact=exact_category_types(query,manifest)
+    query=re.sub(r'(?:(?:这|那)(?:一)?(?:类|种)(?:的?(?:商品|产品))?|类的?(?:商品|产品)|商品|产品)$','',query).strip()
+    inferred=[];matched=None
     if exact:
         inferred=exact
         matched='exact_source_type' if query.upper() in exact else 'chinese_catalog_label'

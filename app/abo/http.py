@@ -51,7 +51,7 @@ def create_abo_app():
             row = session.respond(body.question)
             if row["decision"]=="exit":
                 sessions.pop(key).close()
-        return {"session_id":key,"answer":row["answer"],"action":row["decision"],
-                "citations":row["citations"],"strategy":row["adaptive"]["strategy"]}
+        return {"session_id":key,"answer":row["display_answer"],"action":row["decision"],
+                "sources":row["display_sources"],"citations":row["citations"],"strategy":row["adaptive"]["strategy"]}
 
     return app

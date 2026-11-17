@@ -120,7 +120,7 @@ class StageDChat:
             request.update(skus=[state["sku"]],domain=state["domain"])
         return text,request
 
-    def respond(self,text,*,adaptive=None,allow_compatibility=True):
+    def respond(self,text,*,adaptive=None,allow_compatibility=True,presenter=None):
         text = text.strip()
         if not 0 < len(text) <= 1600:
             raise ValueError("请输入 1 到 1600 个字符。")
@@ -134,6 +134,8 @@ class StageDChat:
                 self.device_state = result["state"]
                 self.pending = result["decision"] in ("clarify_model","clarify_accessory","clarify_site")
                 self.last_lane = "compatibility"
+                if presenter:
+                    result.update(presenter({**result,"question":text}))
                 return save_result(self.output,{**result,"entry_lane":self.last_lane,"adaptive":adaptive},text,self.turn,
                                    self.config_sha,self.source_sha)
         effective, request = self._catalog_request(text)
@@ -144,6 +146,8 @@ class StageDChat:
                "decision":record["action"],"matches":[],"run_name":self.output.name,
                "run_directory":str(self.output.relative_to(WORKSPACE)),
                "question_id":f"D-{self.turn:03d}","config_sha256":self.config_sha,"source_sha256":self.source_sha}
+        if presenter:
+            row.update(presenter(row))
         with (self.output/"results.jsonl").open("a",encoding="utf-8") as stream:
             stream.write(json.dumps(row,ensure_ascii=False)+"\n")
         append_question(self.output,row)

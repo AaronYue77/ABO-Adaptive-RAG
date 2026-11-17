@@ -135,14 +135,12 @@ def connect(address):
 def ask(kernel, question):
     expression = (
         f"{{key: value for key, value in chat.respond({question!r}).items() "
-        "if key in ('answer', 'matches', 'citations')}"
+        "if key in ('answer', 'display_answer', 'display_sources')}"
     )
     result = kernel.execute(expression, timeout=300)
-    print("助手：" + result["answer"])
-    for match in result.get("matches", []):
-        print("  " + match["listing"] + " " + match["title"])
-    for citation in result.get("citations", []):
-        print("  来源 " + citation)
+    print("助手：" + (result.get("display_answer") or result["answer"]))
+    for label in dict.fromkeys(source["label"] for source in result.get("display_sources",[])):
+        print("  来源 "+label)
 
 
 def main():

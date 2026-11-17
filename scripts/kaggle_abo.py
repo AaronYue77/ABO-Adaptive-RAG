@@ -52,7 +52,7 @@ def start():
 
 
 def verify(session):
-    from app.abo.validation import run_category_validation, run_validation
+    from app.abo.validation import run_category_validation, run_presentation_validation, run_validation
     from common import WORKSPACE
 
     smoke = runpy.run_path(str(WORKSPACE/"scripts/kaggle_stage_d_chat.py"))
@@ -62,4 +62,6 @@ def verify(session):
     print(f"Cross-category regression {result['passed']}/{result['cases']}.",flush=True)
     category = run_category_validation(session,session.output/"all-category-followups.json")
     print(f"Product follow-up across source categories: {category['passed']}/{category['categories']}.",flush=True)
+    presentation = run_presentation_validation(session,session.output/"presentation.json")
+    print(f"Customer reply presentation: {presentation['passed']}/{presentation['cases']}.",flush=True)
     return result

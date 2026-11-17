@@ -43,6 +43,11 @@ def boundary(question):
 
 PRICE_UNAVAILABLE = ('ABO 商品记录没有可核实的价格，当前也没有实时价格来源。'
                      '无法判断哪款更贵、是否打折或是否符合预算。可以继续比较商品资料中已有的规格和包装。')
+IDENTITY_REQUEST = re.compile(
+    r'(?:请问|请)?(?:这款|这个|当前|所选)?(?:商品)?(?:的)?(?:商品编号|编号|货号|ASIN|SKU)(?:是)?什么'
+    r'|(?:请|帮我|给我)?(?:显示|列出|告诉我)(?:目前|当前|所选|当前候选|候选|这款)?(?:商品)?(?:的)?(?:编号|货号|ASIN|SKU)',
+    re.I,
+)
 
 
 class EvidenceReader:
@@ -206,6 +211,13 @@ class FullSession:
         ids=exact_skus(text)
         scoped=scope_route(text,previous_lane or self.last_lane,bool(ids))
         if scoped:return self.answer_scope(text,row,scoped)
+        if IDENTITY_REQUEST.fullmatch(text.rstrip(' ？?。!！')):
+            entries=self.candidate_entities if '候选' in text else self.selected_entities
+            if not entries:
+                return finish('clarify','请先从搜索结果里选一款商品，再查看编号。','identity_target_unclear')
+            row.update(conversation_lane='product',task_kind='identity')
+            answer='\n'.join(f"{item['title']} 的商品编号是 {item['listing_key']}。" for item in entries)
+            return finish('answer',answer,'selected_listing_identity')
         previous=self.last_task or {}
         latest_lane=previous_lane or previous.get('lane')
         active_catalog=latest_lane=='catalog'

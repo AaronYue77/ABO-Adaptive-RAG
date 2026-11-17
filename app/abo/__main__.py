@@ -48,9 +48,9 @@ def main():
     try:
         def ask(question):
             row = session.respond(question)
-            print("助手："+row["answer"])
-            for citation in row["citations"]:
-                print("来源 "+citation)
+            print("助手："+row["display_answer"])
+            for label in dict.fromkeys(source["label"] for source in row["display_sources"]):
+                print("来源 "+label)
             return row["decision"]
 
         if args.command=="ask":

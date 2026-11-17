@@ -33,12 +33,13 @@ if "chat" not in globals():
     bootstrap = runpy.run_path(str(script))
     chat = bootstrap["start"]()
 
-def ask(text):
+def ask(text, *, details=False):
     row = chat.respond(text)
-    print(row["answer"])
-    for citation in row["citations"]:
-        print("来源", citation)
-    return row
+    print(row["display_answer"])
+    for label in dict.fromkeys(source["label"] for source in row["display_sources"]):
+        print("来源", label)
+    if details:
+        return row
 
 print("ABO Adaptive RAG 商品助手已就绪")
 '''

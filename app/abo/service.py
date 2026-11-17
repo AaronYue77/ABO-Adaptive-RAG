@@ -6,6 +6,7 @@ import sys
 from threading import RLock
 
 from app.agents.abo_graph import build_abo_graph
+from app.abo.presentation import present
 from app.core.enums import RetrievalStrategy
 
 
@@ -61,7 +62,8 @@ class AboDialogue:
         return {"strategy": strategy, "routing_reason": reason}
 
     def _execute(self, state, *, compatibility):
-        return {"result": self.engine.respond(state["question"], allow_compatibility=compatibility, adaptive={
+        return {"result": self.engine.respond(state["question"], allow_compatibility=compatibility,
+                                               presenter=lambda row: present(row,self.app.retriever), adaptive={
             "strategy": state["strategy"].value, "reason": state["routing_reason"],
         })}
 
