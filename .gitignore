@@ -79,6 +79,8 @@ scratch/
 /abo_runtime/upstream/VisRAG/personal/a_baseline/
 /.runtime/
 /.venv-gpu/
+/.venv-web/
+/abo_runtime/.web-setup.lock
 /.local/
 /.cache/
 /.tools/

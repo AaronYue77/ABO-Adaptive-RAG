@@ -6,7 +6,8 @@
 
 ```mermaid
 flowchart TD
-    A["Notebook、PowerShell、HTTP"] --> B["当前输入和会话中已确认的商品身份"]
+    A["网页、Notebook、PowerShell、HTTP"] --> B["当前输入和会话中已确认的商品身份"]
+    A --> browse["浏览器直读 ABO 类目、商品和属性"]
     B --> R{"Adaptive-rag 五路分流"}
     R -->|direct| D["问候或可解释的业务边界"]
     R -->|refuse| F["解释 ABO 服务范围"]
@@ -20,6 +21,8 @@ flowchart TD
     D --> P
     F --> P
     P --> T["实际对话、逐题 TXT / JSONL 与运行事件"]
+    P --> W["网页回答及来源<br/>合适时附已核实商品图片"]
+    W --> browse
 ```
 
 商品的身份由 ASIN 和站点共同确定。目录翻页与商品展示各自依赖最近任务。明确要求全部资料时一次给出该商品的可读源属性、产品要点、原始描述和来源字段。要求剩余资料时依据已经展示的源条目。价格、实时库存和交易动作都有明确的资料边界。

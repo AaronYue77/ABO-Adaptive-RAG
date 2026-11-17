@@ -1,6 +1,6 @@
 # A–D 阶段详细流程
 
-四个阶段共享 ABO 商品身份、证据来源和逐题记录。A 建立商品数据和证据，B 用这些资产完成会话取证，C 在固定证据上训练和验证图文适配器，D 复用目录、检索和按需读图来核对配件兼容。新项目的 FastAPI、PowerShell 和 Kaggle 使用同一个 Adaptive-rag 会话入口。
+四个阶段共享 ABO 商品身份、证据来源和逐题记录。A 建立商品数据和证据，B 用这些资产完成会话取证，C 在固定证据上训练和验证图文适配器，D 复用目录、检索和按需读图来核对配件兼容。网页、FastAPI、PowerShell 和 Kaggle 使用同一个 Adaptive-rag 会话入口。
 
 [首页总流程图](../README.md#a-d-总流程) · [统一问答与分流](ABO架构与验证.md) · [日志与排查](日志与排查.md)
 
@@ -16,6 +16,7 @@ flowchart TD
     db --> fts["名称、类目、型号检索<br/>FTS5 / BM25"]
     db --> dense["离线多语言 E5 向量<br/>按行与目录身份对应"]
     db --> source["可核实字段、标题及要点<br/>按需缓存原图、生成派生证据页"]
+    db --> browser["网页浏览类目、分页商品和属性<br/>按同一条商品记录匹配官方照片"]
     fts --> check["逐条核对目录、全文索引、向量行和来源摘要"]
     dense --> check
     source --> sample["576 类分层字段与引用抽查"]
@@ -61,6 +62,7 @@ flowchart TD
     guard --> answer
     policy --> answer
     plain --> answer
+    answer --> browser["网页显示回答和来源<br/>按本轮任务选择商品图片"]
     rank -.-> offline["独立的冻结检索对照<br/>以商品身份与家族计分"]
 ```
 

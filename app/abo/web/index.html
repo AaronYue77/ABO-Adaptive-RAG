@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="在 ABO 历史商品目录里查商品、核对规格和配件兼容。">
+  <title>ABO 商品档案 · 问答台</title>
+  <link rel="stylesheet" href="/web-assets/styles.css">
+  <script type="module" src="/web-assets/chat.js"></script>
+</head>
+<body>
+  <a class="skip" href="#question">跳到问答输入</a>
+  <header class="topbar">
+    <div class="top-inner">
+      <a class="wordmark" href="/" aria-label="ABO 商品档案首页"><span class="brand">ABO</span><span>商品档案</span></a>
+      <span class="top-divider"></span><span class="top-current">问答台</span>
+      <nav class="top-actions" aria-label="会话操作">
+        <span class="status" id="mode"><span class="dot"></span><span id="mode-text">正在连接</span></span>
+        <button class="quiet" id="history-button" type="button"><span class="line-icon history-icon" aria-hidden="true"></span><span>对话记录</span></button>
+        <button class="outline" id="connection-button" type="button">连接 Kaggle <span aria-hidden="true">↗</span></button>
+      </nav>
+    </div>
+  </header>
+
+  <main class="layout">
+    <div class="workspace">
+      <div class="section-head"><div><span class="section-dot"></span><h1>商品问答</h1></div><button class="outline new-chat" type="button" id="new-chat"><span aria-hidden="true">+</span> 新对话</button></div>
+      <section id="welcome" aria-labelledby="welcome-title">
+        <div class="hero">
+          <div class="hero-copy">
+            <div class="hero-tag"><span></span> ABO 历史商品目录</div>
+            <h2 id="welcome-title"><span>今天想查</span><span>什么商品？</span></h2>
+            <p>点选类目浏览商品，或直接问规格、款式和配件兼容。</p>
+          </div>
+          <div class="hero-media" aria-hidden="true">
+            <div class="orbit orbit-one"></div><div class="orbit orbit-two"></div>
+            <div class="photo-card pack"><img src="/web-assets/assets/catalog-pack.webp" alt="" width="234" height="235"></div>
+            <div class="photo-card case"><img src="/web-assets/assets/catalog-case.webp" alt="" width="200" height="242"></div>
+            <span class="spark">✦</span>
+          </div>
+          <a class="photo-credit" href="https://amazon-berkeley-objects.s3.amazonaws.com/index.html" target="_blank" rel="noopener noreferrer">Amazon / ABO 商品图片 ↗</a>
+        </div>
+        <section id="browser" class="catalog-browser" aria-labelledby="browse-title">
+          <div class="browse-head">
+            <div><button id="back-categories" class="text-button" type="button" hidden>‹ 全部类目</button><h2 id="browse-title">全部类目</h2><p id="browse-count"></p></div>
+            <label class="sr-only" for="filter-categories">搜索类目</label>
+            <input id="filter-categories" type="search" placeholder="搜索类目，如手表" autocomplete="off">
+          </div>
+          <div id="browse-scroll" class="browse-scroll" tabindex="0" aria-labelledby="browse-title">
+            <div id="browse-grid" class="browse-grid"></div>
+            <p id="browse-status" class="browse-status" role="status">正在读取目录…</p>
+            <button id="browse-more" class="outline browse-more" type="button" hidden>加载更多</button>
+          </div>
+        </section>
+      </section>
+
+      <section id="conversation" aria-label="当前对话" role="log" aria-live="polite" hidden></section>
+      <div class="compose-dock">
+        <p class="notice" id="notice" role="status" hidden></p>
+        <form id="composer" aria-label="发送问题">
+          <label class="sr-only" for="question">输入商品问题</label>
+          <textarea id="question" rows="2" maxlength="1600" placeholder="问问商品的颜色、规格，或找几个候选…" required></textarea>
+          <div class="composer-foot"><span class="key-hint"><kbd>Enter</kbd> 发送 <i></i> <kbd>Shift + Enter</kbd> 换行</span><button id="send" type="submit">发送 <span aria-hidden="true">↑</span></button></div>
+        </form>
+        <p class="disclosure">ABO 提供历史商品资料。价格、库存和时效请以对应站点为准。</p>
+        </div>
+    </div>
+
+    <aside class="context" aria-label="目录与回答来源">
+      <section class="side-card catalog-card" aria-labelledby="catalog-title">
+        <div class="side-kicker"><span class="catalog-icon" aria-hidden="true">▤</span><h2 id="catalog-title">目录概览</h2></div>
+        <div class="catalog-number" id="record-count">—</div><p class="stat-label">历史商品记录</p>
+        <div class="stat-grid"><div><strong id="category-count">—</strong><span>原始类目</span></div><div><strong id="market-count">—</strong><span>站点</span></div></div>
+        <button id="browse-button" class="text-button" type="button">浏览类目 <span aria-hidden="true">↗</span></button>
+      </section>
+      <section class="side-card evidence-card" aria-labelledby="evidence-title">
+        <div class="side-kicker"><span class="catalog-icon" aria-hidden="true">⌑</span><h2 id="evidence-title">回答来源</h2></div>
+        <div id="evidence" aria-live="polite"><p class="empty-sources">有引用的回答会在这里显示来源，方便核对商品或条款。</p></div>
+      </section>
+      <section class="side-card suggestions" aria-labelledby="suggestions-title">
+        <div class="side-kicker"><span class="catalog-icon" aria-hidden="true">?</span><h2 id="suggestions-title">试着问</h2></div>
+        <button type="button" class="text-button" data-question="手表类商品有多少个？">手表类商品有多少个？</button>
+        <button type="button" class="text-button" data-question="搜索红色高跟鞋">搜索红色高跟鞋</button>
+        <button type="button" class="text-button" data-question="Amazon.com 的一般退货政策是什么？">Amazon.com 一般退货政策</button>
+      </section>
+    </aside>
+  </main>
+
+  <dialog id="history-dialog" aria-labelledby="history-title">
+    <div class="dialog-head"><h2 id="history-title">对话记录</h2><button class="close-dialog" data-close type="button" aria-label="关闭对话记录">×</button></div>
+    <div id="history-list"></div>
+  </dialog>
+  <dialog class="product-dialog" id="product-dialog" aria-labelledby="product-title">
+    <div class="dialog-head"><h2 id="product-title">商品资料</h2><button class="close-dialog" data-close type="button" aria-label="关闭商品资料">×</button></div>
+    <div id="product-content"></div>
+  </dialog>
+  <dialog id="connection-dialog" aria-labelledby="connection-title">
+    <div class="dialog-head"><h2 id="connection-title">连接 Kaggle GPU</h2><button class="close-dialog" data-close type="button" aria-label="关闭连接窗口">×</button></div>
+    <p>启动自己的 ABO Notebook。在 Kaggle 的 <b>Run → Kaggle Jupyter Server</b> 复制 <b>VSCode Compatible URL</b>。网页和终端共用这个 Notebook 的对话。</p>
+    <form id="connection-form">
+      <label for="address">Kaggle 会话地址</label>
+      <input type="password" id="address" autocomplete="off" spellcheck="false" placeholder="https://…" maxlength="4096" required>
+      <p class="dialog-status" id="connection-status" role="status" hidden></p>
+      <div class="dialog-actions"><button class="quiet" type="button" id="disconnect" hidden>返回本机目录</button><button class="primary" type="submit" id="connect">连接</button></div>
+    </form>
+  </dialog>
+</body>
+</html>

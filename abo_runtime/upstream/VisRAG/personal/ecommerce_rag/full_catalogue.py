@@ -143,6 +143,24 @@ def catalog_search_route(text, retriever):
     return None
 
 
+def photo_search(text, retriever):
+    """Normalize a request to browse photos of a verified named product or category."""
+    query = text.strip(' \t。？?！!')
+    with_photo = re.fullmatch(
+        r'(.+?)[，,；;](?:\s*(?:并|再|顺便|也))?(?:请|能不能|可以|给我|帮我|发|展示|看|想)*\s*(?:商品)?(?:图片|照片|原图)',
+        query,
+    )
+    if with_photo:
+        subject = re.sub(r'^(?:请问\s*)?(?:有哪些|有什么|有没有|能找到哪些)', '', with_photo[1].strip())
+        command = subject if SEARCH_REQUEST.match(subject) else '搜索 ' + subject
+    else:
+        request = re.fullmatch(r'(?:请|能不能|可以|给我|帮我|展示|看|找|想|一下)*\s*([^，,。?!！？]+?)(?:的)?(?:图片|照片|原图)', query)
+        if not request:
+            return None
+        command = '搜索 ' + request[1].strip()
+    return command if catalog_search_route(command, retriever) else None
+
+
 def continuation_request(text):
     clean=re.sub(r'[\s，,。.!！?？]+','',text)
     return bool(re.fullmatch(r'(?:那|我说的|我是说|除此之外)?(?:还有(?:呢|吗|什么|哪些|别的|其他|其它|更多)?(?:相关信息|信息|资料|内容)?|继续|接着说|再说(?:点|一些)|再多介绍一点)',clean))

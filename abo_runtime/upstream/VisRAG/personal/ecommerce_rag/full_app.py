@@ -19,7 +19,7 @@ from log_privacy import redact_log
 from stage_a import Reader,snapshot
 from full_conversation import FullConversation,SCOPE_MESSAGE,VERSION as CONVERSATION_VERSION,bound_history,price_request,scope_route
 from full_catalogue import (SEARCH_REQUEST, catalogue_request, category_search_request, catalog_navigation, count_request,
-                            overview_request, catalog_page, catalog_search_route, normalize_search, overview_chunk)
+                            overview_request, catalog_page, catalog_search_route, normalize_search, overview_chunk, photo_search)
 from full_reference import ORDINAL,bare_category_choice,normalize_selected_field_reference,ordinal_index,product_task,ordinal_choice,product_detail_followup,selected_name_reference
 from full_evidence import (VERSION as EVIDENCE_VERSION, LISTING_REF, PHOTO_REQUEST, alternate_pages, answer_variant,
                            comparison_axis, compare_source_fields, fields_alongside_price, fields_alongside_stock, guard_identity_echo,
@@ -263,6 +263,8 @@ class FullSession:
             requested_count = count_request(text) if not ids and not request.get('skus') else None
             if requested_count is not None and self.answer_count(row, requested_count, request):
                 return
+        if self.app.native_lookup and not ids and not request.get('skus'):
+            text = photo_search(text,self.app.retriever) or text
         if active_catalog and previous.get('catalog_count_subject') and re.fullmatch(
             r'(?:请|帮我|那)*(?:列出|展示|看看|看一下|给我看看)(?:这些|这类|这个类目的)?(?:商品|产品|几款|一些)?[。？！?!\s]*',text
         ):

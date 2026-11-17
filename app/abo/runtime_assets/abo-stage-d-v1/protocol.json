@@ -1,0 +1,12 @@
+{
+  "version": "abo-accessory-agent-v1",
+  "counts": {
+    "train": 180,
+    "dev": 60,
+    "test": 180
+  },
+  "case_sha256": "acafe21ba6ab0f5cfdb80fa78c369fadb7f70ae593fb5d8a0296a89f32fbdad1",
+  "router_sha256": "2a53b551ab1e02885b7846c96054480c8e496b737ecf9d7bdc7c902af9a8aad7",
+  "model": "character bigram/trigram multinomial naive Bayes",
+  "scope": "Source-derived compatibility scenario templates; independent product and target device family splits; 24 separately injected faults."
+}

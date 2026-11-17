@@ -1,0 +1,17 @@
+{
+  "version": "policies-us-v1",
+  "marketplace": "amazon.com",
+  "observed_on": "2026-11-09",
+  "clauses": {
+    "general_returns": {
+      "section": "Return Window",
+      "url": "https://digprjsurvey.amazon.com/csad/help/node/GKM69DUUYKQWKWX7",
+      "text": "Amazon.com 的一般规则适用于多数商品。通常可在送达后 30 天内退货，商品应保持原状或未使用。节假日、特定品类及其他例外可能有不同期限，请核对官方原文和该商品的订单页面。"
+    },
+    "general_refunds": {
+      "section": "Refund timelines",
+      "url": "https://digprjsurvey.amazon.com/csad/help/node/GKQNFKFK5CF3C54B",
+      "text": "退回商品收到并处理后，退款按 Amazon.com 的规则办理。退款可能需要最多 30 天，具体取决于订单、运输、处理速度和付款方式。"
+    }
+  }
+}

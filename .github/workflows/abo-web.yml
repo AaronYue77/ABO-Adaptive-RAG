@@ -1,0 +1,30 @@
+name: ABO web clean checkout
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 18
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Download public ABO sources and build the full catalogue
+        run: python scripts/start_web.py --prepare-only --no-browser
+      - name: Check the catalogue, conversation and image rules
+        run: python scripts/smoke_web.py
