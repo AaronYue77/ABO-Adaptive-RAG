@@ -13,11 +13,16 @@ MODELS = {
     "e5": ("intfloat/multilingual-e5-small", "614241f622f53c4eeff9890bdc4f31cfecc418b3"),
 }
 ROOT = Path(__file__).resolve().parents[1] / "abo_runtime/models"
+ALTERNATE_E5_EXPORTS = [".eval_results/*", "onnx/*", "openvino/*", "pytorch_model.bin"]
 
 
-def verify(repo, revision, model_dir):
+def verify(repo, revision, model_dir, *, ignore_patterns):
+    from fnmatch import fnmatch
+
     info = HfApi().model_info(repo, revision=revision, files_metadata=True)
-    for file in info.siblings:
+    files = [file for file in info.siblings
+             if not any(fnmatch(file.rfilename, pattern) for pattern in ignore_patterns)]
+    for file in files:
         path = model_dir / file.rfilename
         if not path.is_file() or path.stat().st_size != file.size:
             raise ValueError(f"Missing or incomplete official file: {path}")
@@ -25,7 +30,7 @@ def verify(repo, revision, model_dir):
             with path.open("rb") as stream:
                 if file_digest(stream, "sha256").hexdigest() != file.lfs.sha256:
                     raise ValueError(f"Official SHA-256 mismatch: {path}")
-    print(f"{repo} @ {revision}: verified {len(info.siblings)} files in {model_dir}", flush=True)
+    print(f"{repo} @ {revision}: verified {len(files)} files in {model_dir}", flush=True)
 
 
 def main():
@@ -36,9 +41,11 @@ def main():
     for name in args.models:
         repo, revision = MODELS[name]
         model_dir = ROOT / repo.split("/")[1]
+        ignored = ALTERNATE_E5_EXPORTS if name == "e5" else []
         if not args.verify_only:
-            snapshot_download(repo, revision=revision, local_dir=model_dir, max_workers=4)
-        verify(repo, revision, model_dir)
+            snapshot_download(repo, revision=revision, local_dir=model_dir, max_workers=4,
+                              ignore_patterns=ignored)
+        verify(repo, revision, model_dir, ignore_patterns=ignored)
 
 
 if __name__ == "__main__":

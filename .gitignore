@@ -78,6 +78,7 @@ scratch/
 /abo_runtime/记录/
 /abo_runtime/upstream/VisRAG/personal/a_baseline/
 /.runtime/
+/.venv-gpu/
 /.local/
 /.cache/
 /.tools/

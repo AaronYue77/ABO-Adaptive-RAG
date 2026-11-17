@@ -9,6 +9,10 @@ param(
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $PSScriptRoot
 $Python = $env:ABO_PYTHON
+if (-not $Python -and $Gpu) {
+    $GpuPython = Join-Path $Root '.venv-gpu/Scripts/python.exe'
+    if (Test-Path -LiteralPath $GpuPython) { $Python = $GpuPython }
+}
 if (-not $Python) { $Python = Join-Path $Root '.venv/Scripts/python.exe' }
 if (-not (Test-Path -LiteralPath $Python)) { throw 'Set ABO_PYTHON or create the environment described in README.' }
 
@@ -19,6 +23,7 @@ $LaunchEnvironment = @{
     DOC_VQA_WORKSPACE = (Join-Path $Root 'abo_runtime')
     HF_HOME = (Join-Path $Root '.cache/huggingface')
     HF_HUB_OFFLINE = '1'
+    CUDA_CACHE_PATH = (Join-Path $Root '.cache/cuda')
 }
 $PreviousEnvironment = @{}
 foreach ($Key in $LaunchEnvironment.Keys) {
