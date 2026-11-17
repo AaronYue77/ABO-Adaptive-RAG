@@ -13,8 +13,11 @@ def main():
     parser.add_argument("command", nargs="?", choices=("check","chat","ask","cloud-chat","serve","logs"), default="chat")
     parser.add_argument("--question")
     parser.add_argument("--gpu",action="store_true")
+    parser.add_argument("--visual", action="store_true", help="用本机 VisRAG-Ret 对搜索候选的商品图重排。")
     parser.add_argument("--model-dir",type=Path)
     args = parser.parse_args()
+    if args.visual and args.command not in {"chat", "ask"}:
+        parser.error("--visual 用于本地 chat 或 ask。")
     workspace = bind_runtime()
     if args.command=="logs":
         from audit import ALL_RESULTS_TXT
@@ -50,7 +53,7 @@ def main():
         parser.error("ask 需要 --question。")
     output = workspace / "reports/ecommerce_rag" / ("abo-adaptive-chat-"+uuid4().hex[:10])
     output.mkdir(parents=True)
-    session = AboDialogue(output,gpu=args.gpu,model_dir=args.model_dir,entry=f"PowerShell {args.command}")
+    session = AboDialogue(output,gpu=args.gpu,visual=args.visual,model_dir=args.model_dir,entry=f"PowerShell {args.command}")
     try:
         def ask(question):
             row = session.respond(question)

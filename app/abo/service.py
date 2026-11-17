@@ -22,7 +22,7 @@ def bind_runtime():
 
 
 class AboDialogue:
-    def __init__(self, output, *, gpu=False, model_dir=None, entry="程序调用"):
+    def __init__(self, output, *, gpu=False, visual=False, model_dir=None, entry="程序调用"):
         bind_runtime()
         from app.abo.journal import SessionJournal
         from d_chat import StageDChat
@@ -33,10 +33,13 @@ class AboDialogue:
         try:
             package = Path(__file__).resolve().parent
             extra = [*package.glob("*.py"),package.parent/"agents/abo_graph.py",package.parent/"core/enums.py"]
-            self.engine = StageDChat(output, gpu=gpu, model_dir=model_dir,application_sources=extra)
+            self.engine = StageDChat(output, gpu=gpu, visual=visual, model_dir=model_dir,application_sources=extra)
             self.app = self.engine.app
             self.graph = build_abo_graph(self)
-            self.journal.ready("GPU" if gpu else "本地索引", self.engine.config_sha)
+            profile = "Qwen GPU" if gpu else "本地索引"
+            if visual:
+                profile += " + VisRAG-Ret"
+            self.journal.ready(profile, self.engine.config_sha)
         except Exception as error:
             self.journal.failed("初始化", error)
             self.journal.close()

@@ -53,7 +53,7 @@ def model_runtime():
     started = time.perf_counter()
     if torch.__version__ != "2.1.2+cu121":
         raise RuntimeError("Use the separate .venv-visrag with torch 2.1.2+cu121")
-    manifest = json.loads((WORKSPACE / "reports/visrag-repro/model-manifest.json").read_text("utf-8"))
+    manifest = json.loads((HERE / "model-manifest.json").read_text("utf-8"))
     if manifest["revision"] != MODEL_REVISION:
         raise ValueError("Unexpected retrieval checkpoint revision")
     # Verify reviewed remote Python sources before trust_remote_code local import.

@@ -1,0 +1,99 @@
+{
+  "repo": "openbmb/VisRAG-Ret",
+  "revision": "95ef596df871b606167cb7e4b7215caf1bfdf761",
+  "path": "models/VisRAG-Ret",
+  "files": [
+    {
+      "name": "README.md",
+      "bytes": 8152,
+      "sha256": "733c59f3d7a5e2955b68659b5ae16d1a6669da2d47a62ee980b0c14af3486ddf",
+      "source": "reviewed official HF source"
+    },
+    {
+      "name": "config.json",
+      "bytes": 1127,
+      "sha256": "93a56ca6d8fe12b3ebf1604e62a877550c7bf2cd264e2d8b0a2540b569cd468d",
+      "source": "reviewed official HF source"
+    },
+    {
+      "name": "configuration_minicpm.py",
+      "bytes": 10532,
+      "sha256": "b0bd7eff3b8768c78dd6f7187311c83a569022d08d033c3cdc80fadbbbe4ec7a",
+      "source": "reviewed official HF source"
+    },
+    {
+      "name": "model-00001-of-00002.safetensors",
+      "bytes": 4993235928,
+      "sha256": "2f2f1f0b353cd125705111c0363dd45baa26a586972152b2d55858bb7e8e53a2",
+      "source": "https://modelscope.cn/models/OpenBMB/VisRAG-Ret/resolve/master/model-00001-of-00002.safetensors"
+    },
+    {
+      "name": "model-00002-of-00002.safetensors",
+      "bytes": 1876772888,
+      "sha256": "85c5084077ee3ac7d0bae9bd746f78364ade0299b4fd074e245988e5e9b407f5",
+      "source": "https://modelscope.cn/models/OpenBMB/VisRAG-Ret/resolve/master/model-00002-of-00002.safetensors"
+    },
+    {
+      "name": "model.safetensors.index.json",
+      "bytes": 54568,
+      "sha256": "340e8939dccc4994b15adbb7a50df6dcbc7889be3c36472169116a03e8e82230",
+      "source": "https://modelscope.cn/models/OpenBMB/VisRAG-Ret/resolve/master/model.safetensors.index.json"
+    },
+    {
+      "name": "modeling_minicpm.py",
+      "bytes": 71201,
+      "sha256": "db23d74eefcbab591d12a43eb7b3bd2ed1756b8bdcddb21221e487a46f980c0b",
+      "source": "reviewed official HF source"
+    },
+    {
+      "name": "modeling_minicpmv.py",
+      "bytes": 21010,
+      "sha256": "a9da21e2e046b303bc5db429af42b46a9928b0a63cfca365f890c02c2a608dad",
+      "source": "reviewed official HF source"
+    },
+    {
+      "name": "modeling_visrag_ret.py",
+      "bytes": 4606,
+      "sha256": "3b15efe4ff0dfe80f7f281b92fe50ee3d6bf2e441a7626a15dbb52cd7e2bc3e3",
+      "source": "reviewed official HF source"
+    },
+    {
+      "name": "resampler.py",
+      "bytes": 5614,
+      "sha256": "ca6f243d446a8d8cbe778771e5f7279a0f2fb1adfef49aa0922bdba5d59e0905",
+      "source": "reviewed official HF source"
+    },
+    {
+      "name": "special_tokens_map.json",
+      "bytes": 765,
+      "sha256": "bd2f925a3c481721eb93692d3e46a41d356cc2abfd14bd679e26cbab392f5137",
+      "source": "https://modelscope.cn/models/OpenBMB/VisRAG-Ret/resolve/master/special_tokens_map.json"
+    },
+    {
+      "name": "tokenizer.json",
+      "bytes": 6204808,
+      "sha256": "a513da24a7a05dfadce52d046aae90749ba60135c85629527fe7c75ef09f785b",
+      "source": "https://modelscope.cn/models/OpenBMB/VisRAG-Ret/resolve/master/tokenizer.json"
+    },
+    {
+      "name": "tokenizer.model",
+      "bytes": 1994817,
+      "sha256": "b046f377b2f09a90623a46611bd5d23cb76ac89ca7804a372408f37aff7b96a0",
+      "source": "https://modelscope.cn/models/OpenBMB/VisRAG-Ret/resolve/master/tokenizer.model"
+    },
+    {
+      "name": "tokenizer.py",
+      "bytes": 983,
+      "sha256": "898912209e5d5c462d82217bc9da9fc194b311bb9d79ab2f05d45c4feb629be2",
+      "source": "reviewed official HF source"
+    },
+    {
+      "name": "tokenizer_config.json",
+      "bytes": 3384,
+      "sha256": "4a21e3afed69016075548358c34f030254e1b1cd4ab36a1356cb9393210efcfc",
+      "source": "reviewed official HF source"
+    }
+  ],
+  "total_bytes": 6878390383,
+  "remote_code_review": "Imports and forward path reviewed; load only these pinned, hash-verified local files."
+}

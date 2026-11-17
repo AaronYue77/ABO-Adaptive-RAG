@@ -41,6 +41,7 @@ flowchart TD
     directory -->|指定类目| search
     search --> rank["日常使用 SQLite BM25<br/>离线对照 E5 / RRF 及可选重排"]
     rank --> choose["展示原始名称，确认商品并保存 ASIN@站点"]
+    rank -.-> visual["本地 -Visual · VisRAG-Ret<br/>至多六个候选的原图"] --> choose
     route -->|指定商品或追问| evidence{"本轮需要的来源"}
     choose --> evidence
     evidence -->|明确规格| fields["直接读源值与单位"]
@@ -58,7 +59,7 @@ flowchart TD
     rank -.-> offline["独立的冻结检索对照<br/>以商品身份与家族计分"]
 ```
 
-目录的页码和当前商品分别维护。多商品问题逐项核对，缺少实时价格、库存或证据时说明原因。Notebook 与本地日常会话使用 BM25。其他检索模式及候选内视觉重排通过独立代码和对照协议验收。
+目录的页码和当前商品分别维护。多商品问题逐项核对，缺少实时价格、库存或证据时说明原因。Notebook 与本地日常会话使用 BM25。本地 `-Visual` 可对文字检索候选做商品图重排。B 的冻结检索对照另有独立协议。
 
 - [新项目会话路由](../app/abo/service.py) · [商品对话与逐件答证](../abo_runtime/upstream/VisRAG/personal/ecommerce_rag/full_app.py)
 - [检索模式](../abo_runtime/upstream/VisRAG/personal/ecommerce_rag/full_retrieval.py) · [原始字段、单位和图片证据](../abo_runtime/upstream/VisRAG/personal/ecommerce_rag/full_evidence.py) · [售后快照](../abo_runtime/upstream/VisRAG/personal/ecommerce_rag/full_policy.py)
@@ -87,6 +88,7 @@ flowchart TD
     suite --> paired
     paired --> score["评分检查答案、原值、单位与引用<br/>检查拒答、误拒答及逐题退化"]
     score --> publish["归档达标的 120/50 正式版本<br/>按需加载至图文 Reader 与 D 的原图环节"]
+    publish --> runtime["本地 NF4 从官方四片权重加载<br/>Kaggle 使用官方模型挂载"]
 ```
 
 训练和选版记录沿用原冻结协议。C0、C1、C2 比较回答侧的变化，B 的检索质量使用 B 的独立协议。日常会话复用已确认好的适配器摘要。日志维护发布无需重新微调。

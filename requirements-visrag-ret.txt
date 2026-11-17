@@ -1,0 +1,11 @@
+accelerate==0.27.0
+einops==0.7.0
+huggingface-hub==0.23.0
+numpy==1.26.4
+Pillow==10.1.0
+protobuf==4.25.0
+PyMuPDF==1.24.13
+safetensors==0.4.3
+sentencepiece==0.1.99
+timm==0.9.10
+transformers==4.40.2

@@ -2,8 +2,9 @@
 
 import argparse
 import json
-from hashlib import sha256
+from hashlib import file_digest
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from zipfile import ZIP_DEFLATED, ZipFile
 
 
@@ -11,10 +12,11 @@ ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = "aaronyue77/abo-adaptive-rag-product-assistant-fixture"
 SLUG = "abo-adaptive-rag-product-assistant-8b"
 TITLE = "ABO Adaptive RAG Product Assistant 8B"
-OLD_WORKSPACE = ROOT.parent/"doc-vqa-assistant"
+CATALOG = Path("data/ecommerce_rag/abo-full-v1")
+ADAPTER = Path("reports/ecommerce_rag/stage-c-8b-120-20261110/adapter")
 
 
-def notebook():
+def notebook(online=False):
     init = '''from pathlib import Path
 from zipfile import ZipFile
 import runpy
@@ -50,6 +52,12 @@ def close_chat():
 print("ABO Adaptive RAG 商品助手已就绪")
 print("会话日志", chat.output)
 '''
+    if online:
+        start = init.index('    inputs = Path("/kaggle/input")')
+        end = init.index('    bootstrap = runpy.run_path(str(script))')
+        code = (ROOT/"scripts/kaggle_abo.py").read_text("utf-8")
+        init = (init[:start] + '    script = Path("/kaggle/working/standalone_abo.py")\n'
+                + f'    script.write_text({code!r}, encoding="utf-8")\n' + init[end:])
     verify = 'checks = bootstrap["verify"](chat)\n'
     sample = 'ask("重置");\nask("我想查询电风扇这类商品");\n'
     description = ("# ABO Adaptive RAG 商品助手\n"
@@ -65,58 +73,85 @@ print("会话日志", chat.output)
             "nbformat":4,"nbformat_minor":5}
 
 
-def prepare(base,metadata):
+def prepare(cloud_input):
     fixture = ROOT/".release/fixture"
     kernel = ROOT/".release/kernel"
     fixture.mkdir(parents=True,exist_ok=True)
     kernel.mkdir(parents=True,exist_ok=True)
-    updates = {}
+    files = {}
     library = ROOT/"abo_runtime"
     for path in sorted((library/"upstream/VisRAG/personal").rglob("*.py")):
         if not path.name.startswith("test_"):
-            updates[path.relative_to(library).as_posix()] = path.read_bytes()
+            files[path.relative_to(library).as_posix()] = path
     for group in ("abo","agents","core"):
         for path in (ROOT/"app"/group).glob("*.py"):
             if group!="agents" or path.name in {"__init__.py","abo_graph.py"}:
-                updates[path.relative_to(ROOT).as_posix()] = path.read_bytes()
-    updates["app/__init__.py"]=(ROOT/"app/__init__.py").read_bytes()
-    updates["scripts/kaggle_abo.py"]=(ROOT/"scripts/kaggle_abo.py").read_bytes()
-    policy = "data/ecommerce_rag/policies-us-v1/clauses.json"
-    updates[policy]=(library/policy).read_bytes()
-    wheels = list((ROOT/".release/wheels").glob("*.whl"))
-    assert any(path.name.startswith("langgraph-") for path in wheels)
-    for wheel in wheels:
-        updates[f"graph-wheels/{wheel.name}"]=wheel.read_bytes()
-    checks = {path:sha256(content).hexdigest() for path,content in updates.items()}
-    updates["adaptive-release-manifest.json"]=json.dumps(checks,indent=2).encode("utf-8")
-    with ZipFile(base) as original, ZipFile(fixture/"abo-8b-formal.zip","w",compression=ZIP_DEFLATED) as output:
-        for entry in original.infolist():
-            if entry.filename not in updates:
-                output.writestr(entry.filename,original.read(entry.filename))
-        for path,content in updates.items():
-            output.writestr(path,content)
-    with ZipFile(fixture/"abo-8b-formal.zip") as output:
-        assert output.testzip() is None
-        assert all(sha256(output.read(path)).hexdigest()==digest for path,digest in checks.items())
+                files[path.relative_to(ROOT).as_posix()] = path
+    for name in ("app/__init__.py", "scripts/kaggle_abo.py", "scripts/kaggle_abo_checks.py"):
+        files[name] = ROOT/name
+    for name in ("data/ecommerce_rag/stage-c-active.json", "data/ecommerce_rag/policies-us-v1/clauses.json",
+                 *[f"data/ecommerce_rag/abo-stage-d-v1/{name}" for name in ("cases.jsonl", "protocol.json", "router.json")],
+                 *(ADAPTER/name for name in ("adapter_config.json", "adapter_model.safetensors"))):
+        files[Path(name).as_posix()] = library/name
+    image_key = "896a0727c940e9d8d717262e14927ec37530de2f59ac0c78dcdec6ca91d6b879.jpg"
+    for name in (image_key, image_key+".json"):
+        path = CATALOG/"images"/name
+        files[path.as_posix()] = library/path
+    source = cloud_input/"abo-source-for-kaggle.zip"
+    files["offline/abo-source-for-kaggle.zip"] = source
+    graph_wheels = sorted((ROOT/".release/wheels").glob("*.whl"))
+    model_wheels = sorted(cloud_input.glob("*.whl"))
+    for wheels, prefixes in ((graph_wheels, ("langgraph-",)),
+                             (model_wheels, ("bitsandbytes-", "pymupdf-", "reportlab-"))):
+        for prefix in prefixes:
+            if not any(path.name.startswith(prefix) for path in wheels):
+                raise FileNotFoundError(f"Missing offline wheel: {prefix}")
+    for wheel in (*graph_wheels, *model_wheels):
+        files[f"offline/wheels/{wheel.name}"] = wheel
+
+    checks = {}
+    with NamedTemporaryFile(dir=fixture, suffix=".tmp", delete=False) as pending:
+        temporary = Path(pending.name)
+    try:
+        with ZipFile(temporary,"w",compression=ZIP_DEFLATED) as output:
+            for name,path in sorted(files.items()):
+                with path.open("rb") as stream:
+                    checks[name] = file_digest(stream,"sha256").hexdigest()
+                output.write(path,name)
+            output.writestr("ABO_8B_FORMAL.txt", "ABO Adaptive RAG · standalone release\n")
+            output.writestr("adaptive-release-manifest.json",json.dumps(checks,indent=2))
+        with ZipFile(temporary) as output:
+            for name,digest in checks.items():
+                with output.open(name) as stream:
+                    if file_digest(stream,"sha256").hexdigest() != digest:
+                        raise ValueError(f"Packed file changed: {name}")
+        temporary.replace(fixture/"abo-8b-formal.zip")
+    finally:
+        temporary.unlink(missing_ok=True)
     (fixture/"dataset-metadata.json").write_text(json.dumps(
         {"id":FIXTURE,"title":"ABO Adaptive RAG product assistant release fixture",
          "licenses":[{"name":"CC-BY-4.0"}]},indent=2)+"\n","utf-8")
-    config = json.loads(metadata.read_text("utf-8"))
-    keys=("language","kernel_type","is_private","enable_gpu","enable_internet","model_sources","keywords")
-    release={key:config[key] for key in keys}
-    release.update(id=f"aaronyue77/{SLUG}",title=TITLE,code_file=f"{SLUG}.ipynb",
-                   dataset_sources=[FIXTURE,*config["dataset_sources"][1:]])
-    (kernel/"kernel-metadata.json").write_text(json.dumps(release,indent=2)+"\n","utf-8")
-    data=json.dumps(notebook(),ensure_ascii=False,indent=2)+"\n"
-    (kernel/f"{SLUG}.ipynb").write_text(data,"utf-8")
-    (ROOT/"scripts/kaggle_abo.ipynb").write_text(data,"utf-8")
+    write_notebook(kernel)
     print(f"{len(checks)} source and dependency hashes validated.",flush=True)
 
 
+def write_notebook(kernel, online=False):
+    kernel.mkdir(parents=True, exist_ok=True)
+    release = dict(id=f"aaronyue77/{SLUG}",title=TITLE,code_file=f"{SLUG}.ipynb",language="python",
+                   kernel_type="notebook",is_private=True,enable_gpu=True,enable_internet=online,keywords=["gpu"],
+                   dataset_sources=[FIXTURE],model_sources=["qwen-lm/qwen-3-vl/Transformers/8b-instruct/1"])
+    (kernel/"kernel-metadata.json").write_text(json.dumps(release,indent=2)+"\n","utf-8")
+    data=json.dumps(notebook(online),ensure_ascii=False,indent=2)+"\n"
+    (kernel/f"{SLUG}.ipynb").write_text(data,"utf-8")
+    (ROOT/"scripts/kaggle_abo.ipynb").write_text(data,"utf-8")
+
+
 if __name__=="__main__":
-    source=OLD_WORKSPACE/"reports/maintenance/abo-service-scope-20261116/launcher-final"
     parser=argparse.ArgumentParser()
-    parser.add_argument("--base",type=Path,default=source/"fixture/abo-8b-formal.zip")
-    parser.add_argument("--metadata",type=Path,default=source/"daily-after/kernel-metadata.json")
+    parser.add_argument("--cloud-input",type=Path,default=ROOT/".release/cloud-input")
+    parser.add_argument("--online-notebook", action="store_true")
     args=parser.parse_args()
-    prepare(args.base,args.metadata)
+    if args.online_notebook:
+        write_notebook(ROOT/".release/kernel", online=True)
+    else:
+        prepare(args.cloud_input)

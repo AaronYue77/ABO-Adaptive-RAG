@@ -117,7 +117,7 @@ def main():
 ====================================================================
 一、在哪运行
 打开Windows PowerShell，输入：
-cd 'E:\\大模型项目自学E\\doc-vqa-assistant'
+cd '<历史实验的工作区>'
 
 二、检查与连续聊天
 .\\scripts\\run_stage_a.ps1 -Command check
@@ -161,7 +161,7 @@ HTTP服务：.\\scripts\\run_stage_b.ps1 -Command serve -Port 8768
 
 五、TXT具体保存位置
 每次聊天启动会直接显示实际目录；每个会话均有：
-E:\\大模型项目自学E\\doc-vqa-assistant\\reports\\ecommerce_rag\\abo-full-<日期时间>-<会话号>\\对话记录.txt
+<历史实验的工作区>\\reports\\ecommerce_rag\\abo-full-<日期时间>-<会话号>\\对话记录.txt
 同目录的逐题结果.txt、results.jsonl、config.json和session.json。
 逐题结果.txt含问题ID、问题、参考答案、参考证据页、召回页及排名、模型答案、引用、检索/生成耗时、模型/配置版本。
 交互题无人工标准答案时明确写“交互未标注”，不会伪造参考答案。

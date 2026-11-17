@@ -61,13 +61,13 @@ def compatibility_request(text, *, pending, recent, selected):
 
 
 class StageDChat:
-    def __init__(self, output, *, data=DATA, mode="multi", site="", gpu=False, model_dir=None, application_sources=()):
+    def __init__(self, output, *, data=DATA, mode="multi", site="", gpu=False, visual=False, model_dir=None, application_sources=()):
         self.site = site
         self.output = output
         adapter = ReaderAdapter.accepted() if gpu else None
         classifier, threshold, protocol = classifier_config(data)
         self.app = FullApplication("B",report_root=output/"catalog_lane",audit=False,
-                                   model_dir=model_dir,adapter=adapter,model_available=gpu,native_lookup=True)
+                                   model_dir=model_dir,adapter=adapter,model_available=gpu,native_lookup=True,visual=visual)
         if site and site not in self.app.retriever.manifest["domains"]:
             self.app.close()
             raise ValueError("Site must be an ABO marketplace")
@@ -82,7 +82,7 @@ class StageDChat:
         self.source_sha = snapshot(output,extra=application_sources)
         config = output/"config.json"
         write_json(config,{"entry":ENTRY_VERSION,"compatibility_workflow":VERSION,"mode":mode,
-                           "gpu":gpu,"catalog_records":self.app.retriever.manifest["records"],
+                           "gpu":gpu,"visual_rerank":visual,"catalog_records":self.app.retriever.manifest["records"],
                            "adapter_sha256":adapter.sha256 if adapter else None,
                            "source_sha256":self.source_sha,"compatibility_protocol":protocol})
         self.config_sha = file_hash(config)

@@ -5,7 +5,7 @@
 - 查商品、规格和原始资料时给出来源。会话可以继续看当前商品，也可以显式切换到目录。
 - 回答默认使用 ABO 原始商品名称和自然句子。商品编号保存在引用和逐题记录中，可按需显示。
 - 比较重量、尺寸和类别属性时分别核对来源。缺价格、库存或执行能力时说明边界。
-- Kaggle 用 Qwen3-VL-8B-Instruct 做短寒暄、模糊意图分类和图文读取。接入原有 C 阶段 120/50 LoRA 和 D 配件兼容四角色流程。
+- 本地 GPU 与 Kaggle 可用 Qwen3-VL-8B-Instruct 做短寒暄、意图分类和图文读取，接入 C 阶段 120/50 LoRA。D 阶段提供四角色配件兼容检查。
 
 [统一问答架构](docs/ABO架构与验证.md) · [A–D 阶段详细流程](docs/A-D阶段流程.md) · [日志与排查](docs/日志与排查.md) · [上游原始说明](README.upstream.md)
 
@@ -16,6 +16,7 @@ flowchart LR
     data["ABO 商品、图像与来源"] --> a["A · 商品数据与证据<br/>全库、站点身份、索引与证据页"]
     a --> b["B · 对话与取证<br/>搜索、追问、源字段和引用"]
     b --> c["C · 8B 图文微调<br/>冻结证据、QLoRA、配对评测"]
+    b -.-> vision["本地可选 VisRAG-Ret<br/>文字候选的商品图重排"]
     a --> d["D · 配件兼容<br/>需求、型号、检索、复核"]
     b --> d
     c -->|正式适配器按需读图| d
@@ -31,7 +32,7 @@ flowchart LR
 
 ## Kaggle
 
-打开独立的 [ABO Adaptive RAG Product Assistant 8B](https://www.kaggle.com/code/aaronyue77/abo-adaptive-rag-product-assistant-8b)，启动 GPU 会话并运行第一个代码单元格，看到就绪提示后调用 `ask("茶杯")`。私有 Notebook 的离线依赖、官方 ABO 数据快照与固定模型通过挂载提供。
+打开独立的 [ABO Adaptive RAG Product Assistant 8B](https://www.kaggle.com/code/aaronyue77/abo-adaptive-rag-product-assistant-8b)，启动 GPU 会话并运行第一个代码单元格，看到就绪提示后调用 `ask("茶杯")`。Notebook 使用 [本项目的私有发布包](https://www.kaggle.com/datasets/aaronyue77/abo-adaptive-rag-product-assistant-fixture)和 Kaggle 的官方 Qwen 模型挂载。没有离线副本时，启动单元从官方 ABO 来源下载全量数据并校验摘要。
 
 要从 PowerShell 连接这个 Notebook，在初始化后打开 **Run → Kaggle Jupyter Server**，复制 **VSCode Compatible URL**，再运行下面的命令，将 URL 粘贴到本机提示处。
 
@@ -41,17 +42,18 @@ flowchart LR
 
 ## 本地开发
 
-创建 Python 环境并安装 [ABO 运行依赖](requirements-abo.txt)。如果已有上次运行使用的 ABO 工作区，可以独立复制并校验必要资产：
+已配置的本地工作区可直接打开 PowerShell 运行。
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements-abo.txt
-.\.venv\Scripts\python.exe .\scripts\import_abo_assets.py --source-workspace 'E:\大模型项目自学E\doc-vqa-assistant'
 .\scripts\run_abo.ps1 -Command check
 .\scripts\run_abo.ps1 -Command chat
+.\scripts\run_abo.ps1 -Command chat -Gpu
+.\scripts\run_abo.ps1 -Command chat -Visual
 ```
 
-本地默认运行目录、源字段和文本兼容证据。Kaggle 入口可用 GPU 执行读图。HTTP 可用 `-Command serve` 启动，默认地址为 `http://127.0.0.1:8769/docs`。请求 `POST /api/v1/chat` 时传入 `question`，再用返回的 `session_id` 续聊。
+`chat` 用本机索引查目录、源字段和文本兼容证据。`-Gpu` 从 `abo_runtime/models/Qwen3-VL-8B-Instruct` 读取官方底座，在本机 GPU 用 NF4 运行。`-Visual` 使用 `abo_runtime/models/VisRAG-Ret` 给至多六个文字候选的商品图重排。公共原图若未缓存，则按需下载。模型安装、资产恢复和显存说明见 [本地模型与启动](docs/本地模型与启动.md)。
+
+HTTP 可用 `-Command serve` 启动，默认地址为 `http://127.0.0.1:8769/docs`。请求 `POST /api/v1/chat` 时传入 `question`，再用返回的 `session_id` 续聊。
 
 运行 `-Command logs` 可查看操作、问题与逐题汇总的位置。每次会话保存可见对话、逐题证据和运行事件。远程 PowerShell 会话也保存已收到的结果和连接异常。[日志内容与排查方法](docs/日志与排查.md)
 
