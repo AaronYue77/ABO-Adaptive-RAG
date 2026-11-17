@@ -160,6 +160,8 @@ class FullConversation:
             entry["prepare_seconds"] = time.perf_counter() - started
             grid = inputs.get("image_grid_thw")
             entry["image_grid_thw"] = grid.tolist() if grid is not None else []
+            if grid is not None:
+                entry["image_pixel_budget"] = getattr(runtime, "image_pixel_budget", None)
             merge = getattr(runtime.processor.image_processor,"merge_size",2)
             entry["visual_tokens"] = sum(int(t*h*w)//(merge*merge) for t,h,w in entry["image_grid_thw"])
             torch.cuda.synchronize(); torch.cuda.reset_peak_memory_stats(); gen_start=time.perf_counter()

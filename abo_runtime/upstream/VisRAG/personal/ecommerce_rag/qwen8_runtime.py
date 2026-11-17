@@ -35,5 +35,13 @@ class Qwen8Runtime:
                 bnb_4bit_compute_dtype=self.dtype)
         started = time.perf_counter()
         self.processor = AutoProcessor.from_pretrained(directory, local_files_only=True)
+        image_processor = self.processor.image_processor
+        image_size = dict(image_processor.size)
+        if os.name == "nt" and torch.cuda.get_device_properties(0).total_memory <= 8 * 2**30:
+            # Qwen's image edges are pixel counts. Bound prefill memory on small Windows GPUs.
+            image_size["longest_edge"] = min(image_size["longest_edge"], 262144)
+            image_size["shortest_edge"] = min(image_size["shortest_edge"], image_size["longest_edge"])
+            image_processor.size = image_size
+        self.image_pixel_budget = image_size["longest_edge"]
         self.model = Qwen3VLForConditionalGeneration.from_pretrained(directory, **options).eval()
         self.load_seconds = time.perf_counter() - started

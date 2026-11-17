@@ -73,7 +73,9 @@ class Reader:
         grid_values = grid.tolist() if grid is not None else []
         merge = getattr(self.vlm.processor.image_processor,"merge_size",2)
         visual_tokens = sum(int(t*h*w)//(merge*merge) for t,h,w in grid_values)
-        return inputs, {"image_paths":paths,"image_sizes":sizes,"image_grid_thw":grid_values,"visual_tokens_from_grid":visual_tokens}
+        return inputs, {"image_paths":paths,"image_sizes":sizes,"image_grid_thw":grid_values,
+                        "visual_tokens_from_grid":visual_tokens,
+                        "image_pixel_budget":getattr(self.vlm,"image_pixel_budget",None)}
 
     def read(self, question, request, pages, image_dir, max_pixels, prompt_addition=""):
         import torch
