@@ -15,11 +15,18 @@ if (-not $Python -and (Test-Path -LiteralPath $LocalPython)) {
 if (-not $Python) { $Python = Join-Path $Root '.venv/Scripts/python.exe' }
 if (-not (Test-Path -LiteralPath $Python)) { throw 'Set ABO_PYTHON or create the environment described in README.' }
 
-$env:PYTHONUTF8 = '1'
-$env:PYTHONIOENCODING = 'utf-8'
 $RepoPath = Join-Path $Root '.runtime'
-$env:PYTHONPATH = "$Root;$RepoPath"
-$env:DOC_VQA_WORKSPACE = Join-Path $Root 'abo_runtime'
+$LaunchEnvironment = @{
+    PYTHONUTF8 = '1'
+    PYTHONIOENCODING = 'utf-8'
+    PYTHONPATH = "$Root;$RepoPath"
+    DOC_VQA_WORKSPACE = (Join-Path $Root 'abo_runtime')
+}
+$PreviousEnvironment = @{}
+foreach ($Key in $LaunchEnvironment.Keys) {
+    $PreviousEnvironment[$Key] = [Environment]::GetEnvironmentVariable($Key, 'Process')
+    [Environment]::SetEnvironmentVariable($Key, $LaunchEnvironment[$Key], 'Process')
+}
 $arguments = @('-m','app.abo',$Command)
 if ($Question) { $arguments += @('--question',$Question) }
 if ($Gpu) { $arguments += '--gpu' }
@@ -30,4 +37,11 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "ABO command failed ($LASTEXITCODE)." }
 } finally {
     Pop-Location
+    foreach ($Key in $PreviousEnvironment.Keys) {
+        if ($null -eq $PreviousEnvironment[$Key]) {
+            Remove-Item -LiteralPath "Env:$Key" -ErrorAction SilentlyContinue
+        } else {
+            [Environment]::SetEnvironmentVariable($Key, $PreviousEnvironment[$Key], 'Process')
+        }
+    }
 }
