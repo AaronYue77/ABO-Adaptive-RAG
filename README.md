@@ -32,7 +32,7 @@ sh ./start-web.cmd
 
 新对话先显示 576 个类目。点类目分页浏览全量商品，再点商品卡核对原始属性、站点和来源行。发送问题即切换到对话，搜索、兼容候选和有取证的外观相关回复可附商品图片。计数、一般规格追问、售后和未接实时业务查询用文字回答。目录使用 ABO 原图及其缩略图。全库目前有 575 个类目能找到官方封面，发箍与发带在原始记录中没有附图，其商品仍可查看。 [图片署名与数据来源](docs/网页商品图片.md)
 
-默认使用本机 CPU 查询历史商品资料，启动只依赖公开资产，无需 NVIDIA 显卡、模型下载、Node.js 或 Kaggle 账号。需要 Qwen3-VL-8B 时，在网页右上角点 **连接 Kaggle**，使用自己有权限的 ABO Notebook 会话地址。现有发布 Notebook 和其夹具为私有。 [Kaggle 连接与权限](docs/Kaggle调用与LoRA导出.md)
+默认使用本机 CPU 查询历史商品资料，启动只依赖公开资产，无需 NVIDIA 显卡、模型下载、Node.js 或 Kaggle 账号。需要 Qwen3-VL-8B 时，可以用自己的 Kaggle 账号复制公开 Notebook，再从网页右上角连接。 [公开 8B Notebook](https://www.kaggle.com/code/aaronyue77/abo-adaptive-rag-public-8b) · [Kaggle 连接说明](docs/Kaggle调用与LoRA导出.md)
 
 ## A-D 总流程
 
@@ -59,15 +59,17 @@ flowchart LR
 
 ## Kaggle
 
-打开独立的 [ABO Adaptive RAG Product Assistant 8B](https://www.kaggle.com/code/aaronyue77/abo-adaptive-rag-product-assistant-8b)，启动 GPU 会话并运行第一个代码单元格，看到就绪提示后调用 `ask("茶杯")`。Notebook 使用 [本项目的私有发布包](https://www.kaggle.com/datasets/aaronyue77/abo-adaptive-rag-product-assistant-fixture)和 Kaggle 的官方 Qwen 模型挂载。没有离线副本时，启动单元从官方 ABO 来源下载全量数据并校验摘要。
+1. 登录 Kaggle，打开 [ABO Adaptive RAG Public 8B](https://www.kaggle.com/code/aaronyue77/abo-adaptive-rag-public-8b)，用 **Copy & Edit** 建立副本。
+2. 启用 **Internet** 和 NVIDIA GPU，保留官方 Qwen3-VL-8B-Instruct 模型输入。运行第一个代码单元格，等到「ABO 商品助手已就绪」。Notebook 会从公开渠道取得项目代码、ABO 全量数据和正式 LoRA，并核对数据和权重摘要。
+3. 保持会话运行，打开 **Run → Kaggle Jupyter Server**，复制自己的 **VSCode Compatible URL**。在本机网页点 **连接 Kaggle**，把地址粘贴进去。也可以在自己的 Notebook 里用 `ask("茶杯")` 提问。
 
-要从 PowerShell 连接这个 Notebook，在初始化后打开 **Run → Kaggle Jupyter Server**，复制 **VSCode Compatible URL**，再运行下面的命令，将 URL 粘贴到本机提示处。
+在 PowerShell 中也可以用同一个会话地址，将 URL 粘贴到命令的本机提示处。
 
 ```powershell
 .\scripts\run_abo.ps1 -Command cloud-chat
 ```
 
-[Kaggle 调用、QLoRA 训练与导出](docs/Kaggle调用与LoRA导出.md) · [下载正式 LoRA 适配器](https://github.com/AaronYue77/ABO-Adaptive-RAG/releases/tag/qwen3-vl-8b-abo-lora-v1)
+[Kaggle 调用、QLoRA 训练与导出](docs/Kaggle调用与LoRA导出.md) · [公开 Notebook 源文件](scripts/kaggle_abo_public.ipynb) · [下载正式 LoRA 适配器](https://github.com/AaronYue77/ABO-Adaptive-RAG/releases/tag/qwen3-vl-8b-abo-lora-v1)
 
 ## 本地开发
 

@@ -1,18 +1,19 @@
 # Kaggle 调用与 LoRA 导出
 
-## 日常问答
+## 公开 8B 体验
 
-1. 打开 [ABO Adaptive RAG Product Assistant 8B](https://www.kaggle.com/code/aaronyue77/abo-adaptive-rag-product-assistant-8b)，点击 **Edit**，在设置中启用当前账号可用的 GPU，启动会话。
-2. 运行第一个代码单元格。看到「商品助手已就绪」后，在 Notebook 运行 `ask("我想查电风扇这类商品")`。模型、正式 LoRA、商品资料与推理都在 Kaggle 会话中。
-3. 需要从 PowerShell 输入时，保持会话运行，在 **Run → Kaggle Jupyter Server** 复制 **VSCode Compatible URL**，在项目目录运行 `.\scripts\run_abo.ps1 -Command cloud-chat`，然后粘贴到终端提示。该地址用于连接自己的会话。
+1. 登录 Kaggle，打开 [ABO Adaptive RAG Public 8B](https://www.kaggle.com/code/aaronyue77/abo-adaptive-rag-public-8b)，点 **Copy & Edit** 复制到自己的账号。
+2. 在自己的 Notebook 的 **Session options** 启用 **Internet** 和可用的 NVIDIA GPU。公开 Notebook 已附加 `qwen-lm/qwen-3-vl/Transformers/8b-instruct/1`，如果自行导入 GitHub 的 `.ipynb` 或输入列表中缺少它，在 **Add Input → Models** 选择这个官方模型版本。 [Kaggle 官方 Qwen 模型](https://www.kaggle.com/models/qwen-lm/qwen-3-vl/transformers/8b-instruct/1)
+3. 运行第一个代码单元格，等待「ABO 商品助手已就绪」。首次启动从 GitHub 和 ABO 官方来源下载所需资源并建立全量目录。在 Notebook 里可运行 `ask("我想查电风扇这类商品")`。 [Notebook 源文件](../scripts/kaggle_abo_public.ipynb)
+4. 保持会话运行，在 **Run → Kaggle Jupyter Server** 复制自己的 **VSCode Compatible URL**。打开本机 ABO 网页，点 **连接 Kaggle** 并粘贴。若用 PowerShell 输入，则在项目目录运行 `.\scripts\run_abo.ps1 -Command cloud-chat`，把地址粘贴到本机提示。 [Kaggle Jupyter Server 说明](https://www.kaggle.com/docs/notebooks#kaggle-jupyter-server)
 
-也可以在 [本机网页](../README.md#打开网页问答台) 点 **连接 Kaggle** 后粘贴这个地址。页面显示 `Kaggle GPU` 时，对话由 Notebook 执行，类目浏览、属性面板和图片预览仍由本机服务提供。网页和 PowerShell 连到同一个 Notebook 时，共用其对话状态。关闭或重启 Kaggle 会话后，需要复制新地址重新连接。
+公开版本只使用固定 GitHub 代码版本、公开 ABO 数据、官方 Qwen 模型输入和公开 LoRA Release。LoRA ZIP 和适配器权重加载前会校验 SHA256。第二个代码单元用四道固定公开问题检查类目、找图、真实 8B 回复和 LoRA 读图。GPU 用量走当前访客自己的账号。 [LoRA Release](https://github.com/AaronYue77/ABO-Adaptive-RAG/releases/tag/qwen3-vl-8b-abo-lora-v1)
 
-仓库的默认 CPU 网页可使用公开数据建库。上面的发布 Notebook 和数据夹具为私有，使用它们需要各自的 Kaggle 访问权限。连接地址包含当前会话凭据，网页只在连接时提交给本机服务。
+页面显示 `Kaggle GPU` 时，对话由 Notebook 执行，类目浏览、属性面板和图片预览由本机服务提供。网页和终端连接同一个 Notebook 时共用对话状态。会话停止或重启后，运行初始化单元并复制新地址。会话地址含凭据，只粘贴到本机的连接框或终端提示。日常对话可以在本机日志中核对。 [网页启动说明](../README.md#打开网页问答台)
 
-Notebook v7 的 L4 保存运行完成，使用本项目的私有发布 Dataset 和官方 Qwen 模型挂载。新增购物对话回归 34/34，涵盖类目与站点统计、搜索后调整条件、尺码与变体核对、规格和实时库存的混合请求。原跨类目回归 49/49，类目商品追问 576/576，字段与引用抽查 1,089/1,089。
+## 私有回归版本
 
-已启动的 PowerShell 连接使用对应 Kaggle 内核中的已加载版本。切换到 v7 时，在最新 Notebook 启动新 GPU 会话并执行首个代码单元格，然后用新会话的 VSCode Compatible URL 连接 PowerShell。
+已有 [私有 Notebook v7](https://www.kaggle.com/code/aaronyue77/abo-adaptive-rag-product-assistant-8b) 使用私有夹具并完成 L4 保存运行。新增购物对话回归 34/34，涵盖类目与站点统计、搜索后调整条件、尺码与变体核对、规格和实时库存的混合请求。原跨类目回归 49/49，类目商品追问 576/576，字段与引用抽查 1,089/1,089。
 
 ## 云端微调与发布
 

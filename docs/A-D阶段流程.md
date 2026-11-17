@@ -96,6 +96,7 @@ flowchart TD
     paired --> score["评分检查答案、原值、单位与引用<br/>检查拒答、误拒答及逐题退化"]
     score --> publish["归档达标的 120/50 正式版本<br/>按需加载至图文 Reader 与 D 的原图环节"]
     publish --> runtime["本地 NF4 从官方四片权重加载<br/>Kaggle 使用官方模型挂载"]
+    runtime --> public["公开 Notebook 启动个人 GPU 会话<br/>从 GitHub Release 校验并加载正式 LoRA"]
 ```
 
 训练和选版记录沿用原冻结协议。C0、C1、C2 比较回答侧的变化，B 的检索质量使用 B 的独立协议。日常会话复用已确认好的适配器摘要。日志维护发布无需重新微调。
