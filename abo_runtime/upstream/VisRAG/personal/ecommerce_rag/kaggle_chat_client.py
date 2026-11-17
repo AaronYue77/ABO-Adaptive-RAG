@@ -133,36 +133,49 @@ def connect(address):
 
 
 def ask(kernel, question):
-    expression = (
-        f"{{key: value for key, value in chat.respond({question!r}).items() "
-        "if key in ('answer', 'display_answer', 'display_sources')}"
-    )
-    result = kernel.execute(expression, timeout=300)
+    result = kernel.execute(f"chat.respond({question!r})", timeout=300)
     print("助手：" + (result.get("display_answer") or result["answer"]))
     for label in dict.fromkeys(source["label"] for source in result.get("display_sources",[])):
         print("  来源 "+label)
+    return result
 
 
-def main():
+def main(argv=None, *, output=None):
     parser = argparse.ArgumentParser(description="Connect PowerShell to an initialized Kaggle GPU chat.")
     parser.add_argument("--question")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+    journal = None
+    if output is not None:
+        from app.abo.journal import SessionJournal
+
+        journal = SessionJournal(output, "PowerShell 连接 Kaggle")
+    question = None
     try:
         print("请在 Kaggle 打开 Run → Kaggle Jupyter Server，复制 VS Code Compatible URL。")
         address = kaggle_address(input("粘贴连接地址后按 Enter："))
         print("已收到连接地址，正在连接 Kaggle…", flush=True)
         kernel = connect(address)
         try:
+            if journal:
+                config = kernel.execute("__import__('json').loads((chat.output/'config.json').read_text('utf-8'))", timeout=20)
+                journal.remote_config(config)
+                journal.ready("远程 Kaggle GPU")
             print("已连接 Kaggle GPU 商品助手。输入「退出」结束本地连接。")
             if args.question:
-                ask(kernel, args.question)
+                question = args.question
+                row = ask(kernel, question)
+                if journal:
+                    journal.mirror(row)
             else:
                 while True:
                     question = input("你：").strip()
                     if question.lower() in {"退出", "exit", "quit"}:
                         break
                     if 0 < len(question) <= 1600:
-                        ask(kernel, question)
+                        row = ask(kernel, question)
+                        if journal:
+                            journal.mirror(row)
+                        question = None
                     elif question:
                         print("请输入 1 到 1600 个字符。")
         finally:
@@ -170,11 +183,22 @@ def main():
     except (EOFError, KeyboardInterrupt):
         return 0
     except ChatConnectionError as error:
+        if journal:
+            journal.failed("远程问答" if question else "连接", error, question)
         print(str(error), file=sys.stderr)
         return 1
-    except (requests.RequestException, WebSocketException, OSError, ValueError, KeyError, TypeError):
-        print("连接已中断或地址无效。请确认 Kaggle 会话正在运行，再复制连接地址重试。", file=sys.stderr)
+    except (requests.RequestException, WebSocketException, OSError, ValueError, KeyError, TypeError) as error:
+        message = "连接已中断或地址无效。请确认 Kaggle 会话正在运行，再复制连接地址重试。"
+        if journal:
+            journal.failed("远程问答" if question else "连接", ChatConnectionError(f"{type(error).__name__} · {message}"), question)
+        print(message, file=sys.stderr)
         return 1
+    finally:
+        if journal:
+            journal.close()
+            if (output / "对话记录.txt").is_file():
+                print("本地对话记录 "+str(output / "对话记录.txt"))
+            print("本地运行记录 "+str(output / "运行记录.txt"))
     return 0
 
 

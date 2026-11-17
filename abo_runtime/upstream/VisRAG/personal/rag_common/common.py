@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
@@ -9,7 +10,10 @@ import re
 import time
 import ssl
 import sys
+from threading import RLock
 import urllib.request
+
+from log_privacy import redact_log
 
 REPO = Path(__file__).resolve().parents[2]
 WORKSPACE = Path(os.environ.get("DOC_VQA_WORKSPACE", REPO.parent.parent)).resolve()
@@ -17,6 +21,48 @@ CODE = Path(__file__).resolve().parent
 LOG_DIR = REPO / "personal/a_baseline/docs"  # Preserve the user-agreed log locations.
 ISSUES = LOG_DIR / "问题与解决记录.txt"
 OPERATIONS = LOG_DIR / "操作方法与结果记录.txt"
+_LOG_LOCK = RLock()
+
+
+@contextmanager
+def log_lock(path: Path):
+    """Serialize append operations within this process and across entrypoints."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with _LOG_LOCK, path.with_name(path.name + ".lock").open("a+b") as lock:
+        if os.name == "nt":
+            import msvcrt
+
+            if lock.tell() == 0:
+                lock.write(b"\0")
+                lock.flush()
+            lock.seek(0)
+            msvcrt.locking(lock.fileno(), msvcrt.LK_LOCK, 1)
+            try:
+                yield
+            finally:
+                lock.seek(0)
+                msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+
+
+def append_log(path: Path, text: str) -> None:
+    """Append one prepared record and flush it when this call returns."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8", newline="\n") as stream:
+        stream.write(redact_log(text))
+
+
+def append_log_json(path: Path, row: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8", newline="\n") as stream:
+        stream.write(json.dumps(redact_log(row), ensure_ascii=False) + "\n")
 
 
 def configure_environment() -> None:
@@ -65,25 +111,31 @@ def file_hash(path: Path) -> str:
 
 
 def issue(symptom: str, cause: str, solution: str, verification: str = "待验证", status: str = "待解决") -> str:
-    text = ISSUES.read_text("utf-8") if ISSUES.exists() else ""
-    numbers = [int(value) for value in re.findall(r"ISSUE-(\d+)", text)]
-    key = f"ISSUE-{max(numbers, default=0) + 1:03d}"
-    ISSUES.parent.mkdir(parents=True, exist_ok=True)
-    with ISSUES.open("a", encoding="utf-8", newline="\n") as stream:
-        stream.write(f"\n[{timestamp()}] {key}\n现象：{symptom}\n原因：{cause}\n解决：{solution}\n验证：{verification}\n状态：{status}\n")
+    with log_lock(ISSUES):
+        text = ISSUES.read_text("utf-8") if ISSUES.exists() else ""
+        numbers = [int(value) for value in re.findall(r"(?m)^\[.+?\] ISSUE-(\d+)\b", text)]
+        key = f"ISSUE-{max(numbers, default=0) + 1:03d}"
+        append_log(ISSUES, f"\n[{timestamp()}] {key}\n现象：{symptom}\n原因：{cause}\n解决：{solution}\n验证：{verification}\n状态：{status}\n")
     return key
+
+
+def update_issue(key: str, cause: str, solution: str, verification: str, status: str) -> None:
+    """Append a verified follow-up to the existing issue number."""
+    with log_lock(ISSUES):
+        text = ISSUES.read_text("utf-8") if ISSUES.exists() else ""
+        if not re.fullmatch(r"ISSUE-\d{3,}", key) or not re.search(r"(?m)^\[.+?\] " + key + r"\b", text):
+            raise ValueError("找不到该问题编号。")
+        append_log(ISSUES, f"\n[{timestamp()}] {key} 更新\n原因：{cause}\n解决：{solution}\n验证：{verification}\n状态：{status}\n")
 
 
 def operation(action: str, method: str, result: str, outputs=(), verification: str = "见输出文件", status: str = "完成", related_issues: str = "无", event_time: str | None = None) -> str:
     """Record a project operation, including how it was done and what was verified."""
-    previous = OPERATIONS.read_text("utf-8") if OPERATIONS.exists() else ""
-    numbers = [int(value) for value in re.findall(r"OP-(\d+)", previous)]
-    key = f"OP-{max(numbers, default=0) + 1:03d}"
-    OPERATIONS.parent.mkdir(parents=True, exist_ok=True)
-    with OPERATIONS.open("a", encoding="utf-8", newline="\n") as stream:
-        if not previous:
-            stream.write("项目操作记录：记录方法、操作、结果、验证、产物和问题关联。\n历史操作为依据实际产物补记；精确运行时间以 provenance.json 为准。\n")
-        stream.write(f"\n[{timestamp()}] {key}\n操作：{action}\n执行时间：{event_time or '本次记录时刻'}\n方法：{method}\n结果：{result}\n输出：{'；'.join(str(p) for p in outputs) or '见本条说明'}\n验证：{verification}\n关联问题：{related_issues}\n状态：{status}\n")
+    with log_lock(OPERATIONS):
+        previous = OPERATIONS.read_text("utf-8") if OPERATIONS.exists() else ""
+        numbers = [int(value) for value in re.findall(r"(?m)^\[.+?\] OP-(\d+)\b", previous)]
+        key = f"OP-{max(numbers, default=0) + 1:03d}"
+        header = "项目操作记录：记录方法、操作、结果、验证、产物和问题关联。\n" if not previous else ""
+        append_log(OPERATIONS, header + f"\n[{timestamp()}] {key}\n操作：{action}\n执行时间：{event_time or '本次记录时刻'}\n方法：{method}\n结果：{result}\n输出：{'；'.join(str(p) for p in outputs) or '见本条说明'}\n验证：{verification}\n关联问题：{related_issues}\n状态：{status}\n")
     return key
 
 

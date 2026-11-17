@@ -92,10 +92,10 @@ class Reader:
                 "peak_cuda_gib":torch.cuda.max_memory_allocated()/2**30}
 
 
-def snapshot(output):
+def snapshot(output, *, extra=()):
     folder=output/"source_snapshot";folder.mkdir()
     digest=hashlib.sha256()
-    for path in sorted(list(HERE.glob("*.py"))+list((HERE.parent/"rag_common").glob("*.py"))):
+    for path in sorted(list(HERE.glob("*.py"))+list((HERE.parent/"rag_common").glob("*.py"))+list(extra)):
         name=path.parent.name+"_"+path.name
         data=path.read_bytes();(folder/name).write_bytes(data);digest.update(name.encode());digest.update(data)
     return digest.hexdigest()

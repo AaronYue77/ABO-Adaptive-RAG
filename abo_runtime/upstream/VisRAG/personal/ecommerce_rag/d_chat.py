@@ -16,7 +16,7 @@ from stage_d import DATA, VERSION, StageD, classifier_config, save_result
 from c8_reader import ReaderAdapter
 from stage_a import snapshot
 from common import WORKSPACE, file_hash, write_json
-from audit import append_question
+from audit import append_result
 
 
 ENTRY_VERSION = "full-catalog-and-compatibility-v5"
@@ -61,7 +61,7 @@ def compatibility_request(text, *, pending, recent, selected):
 
 
 class StageDChat:
-    def __init__(self, output, *, data=DATA, mode="multi", site="", gpu=False, model_dir=None):
+    def __init__(self, output, *, data=DATA, mode="multi", site="", gpu=False, model_dir=None, application_sources=()):
         self.site = site
         self.output = output
         adapter = ReaderAdapter.accepted() if gpu else None
@@ -79,7 +79,7 @@ class StageDChat:
         self.pending = False
         self.last_lane = None
         self.turn = 0
-        self.source_sha = snapshot(output)
+        self.source_sha = snapshot(output,extra=application_sources)
         config = output/"config.json"
         write_json(config,{"entry":ENTRY_VERSION,"compatibility_workflow":VERSION,"mode":mode,
                            "gpu":gpu,"catalog_records":self.app.retriever.manifest["records"],
@@ -148,9 +148,7 @@ class StageDChat:
                "question_id":f"D-{self.turn:03d}","config_sha256":self.config_sha,"source_sha256":self.source_sha}
         if presenter:
             row.update(presenter(row))
-        with (self.output/"results.jsonl").open("a",encoding="utf-8") as stream:
-            stream.write(json.dumps(row,ensure_ascii=False)+"\n")
-        append_question(self.output,row)
+        append_result(self.output,row)
         return row
 
 

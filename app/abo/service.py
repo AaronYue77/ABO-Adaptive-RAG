@@ -22,15 +22,25 @@ def bind_runtime():
 
 
 class AboDialogue:
-    def __init__(self, output, *, gpu=False, model_dir=None):
+    def __init__(self, output, *, gpu=False, model_dir=None, entry="程序调用"):
         bind_runtime()
+        from app.abo.journal import SessionJournal
         from d_chat import StageDChat
 
-        self.engine = StageDChat(output, gpu=gpu, model_dir=model_dir)
-        self.output = self.engine.output
-        self.app = self.engine.app
+        self.output = output
         self._lock = RLock()
-        self.graph = build_abo_graph(self)
+        self.journal = SessionJournal(output, entry)
+        try:
+            package = Path(__file__).resolve().parent
+            extra = [*package.glob("*.py"),package.parent/"agents/abo_graph.py",package.parent/"core/enums.py"]
+            self.engine = StageDChat(output, gpu=gpu, model_dir=model_dir,application_sources=extra)
+            self.app = self.engine.app
+            self.graph = build_abo_graph(self)
+            self.journal.ready("GPU" if gpu else "本地索引", self.engine.config_sha)
+        except Exception as error:
+            self.journal.failed("初始化", error)
+            self.journal.close()
+            raise
 
     def route(self, state):
         from d_chat import compatibility_request
@@ -63,9 +73,16 @@ class AboDialogue:
 
     def _execute(self, state, *, compatibility):
         return {"result": self.engine.respond(state["question"], allow_compatibility=compatibility,
-                                               presenter=lambda row: present(row,self.app.retriever), adaptive={
+                                               presenter=self._present, adaptive={
             "strategy": state["strategy"].value, "reason": state["routing_reason"],
         })}
+
+    def _present(self, row):
+        display = present(row, self.app.retriever)
+        problem = self.journal.attach_issue(row)
+        if problem:
+            display["issue_id"] = problem
+        return display
 
     def execute(self, state):
         return self._execute(state,compatibility=False)
@@ -77,8 +94,23 @@ class AboDialogue:
         if not isinstance(text, str) or not 0 < len(text.strip()) <= 1600:
             raise ValueError("请输入 1 到 1600 个字符。")
         with self._lock:
-            return self.graph.invoke({"question": text})["result"]
+            if self.journal.closed:
+                raise RuntimeError("会话已结束。")
+            try:
+                result = self.graph.invoke({"question": text})["result"]
+            except Exception as error:
+                self.journal.failed("对话请求", error, text)
+                raise
+            self.journal.turn(result)
+            return result
 
     def close(self):
         with self._lock:
-            self.engine.close()
+            if not self.journal.closed:
+                try:
+                    self.engine.close()
+                except Exception as error:
+                    self.journal.failed("关闭", error)
+                    raise
+                finally:
+                    self.journal.close()

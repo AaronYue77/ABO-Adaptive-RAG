@@ -41,15 +41,23 @@ def ask(text, *, details=False):
     if details:
         return row
 
+def close_chat():
+    if "chat" in globals():
+        chat.close()
+        print("会话日志", chat.output)
+        del globals()["chat"]
+
 print("ABO Adaptive RAG 商品助手已就绪")
+print("会话日志", chat.output)
 '''
     verify = 'checks = bootstrap["verify"](chat)\n'
     sample = 'ask("重置");\nask("我想查询电风扇这类商品");\n'
     description = ("# ABO Adaptive RAG 商品助手\n"
                    "基于 Adaptive-rag 的独立 ABO 项目。运行第一个代码单元格后，可调用 ask()。\n"
-                   "支持历史商品取证、规格比较、原图、配件兼容和现有售后政策快照。\n")
+                   "支持历史商品取证、规格比较、原图、配件兼容和现有售后政策快照。\n"
+                   "日志随问答写入显示的会话目录。待会话结束时可以调用 close_chat()。\n")
     cells = [{"id":"intro","cell_type":"markdown","metadata":{},"source":description.splitlines(keepends=True)}]
-    for key,source in (("start",init),("verify",verify),("sample",sample)):
+    for key,source in (("start",init),("verify",verify),("sample",sample),("close","close_chat()\n")):
         compile(source,key,"exec")
         cells.append({"id":key,"cell_type":"code","metadata":{},"source":source.splitlines(keepends=True),
                       "execution_count":None,"outputs":[]})

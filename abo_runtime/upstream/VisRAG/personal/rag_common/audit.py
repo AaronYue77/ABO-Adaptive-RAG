@@ -2,7 +2,8 @@
 import json
 from pathlib import Path
 
-from common import WORKSPACE, read_jsonl
+from common import WORKSPACE, append_log, append_log_json, log_lock, read_jsonl
+from log_privacy import redact_log
 
 ALL_RESULTS_TXT = WORKSPACE / "记录/逐题结果汇总.txt"
 
@@ -53,10 +54,16 @@ def format_question(row: dict) -> str:
 def append_question(run_dir: Path, row: dict) -> None:
     """Append immediately after JSONL flush, so an interrupted run still has TXT."""
     content = format_question(row)
-    for path in (run_dir / "逐题结果.txt", ALL_RESULTS_TXT):
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8", newline="\n") as stream:
-            stream.write(content)
+    append_log(run_dir / "逐题结果.txt", content)
+    with log_lock(ALL_RESULTS_TXT):
+        append_log(ALL_RESULTS_TXT, content)
+
+
+def append_result(run_dir: Path, row: dict) -> None:
+    """Persist the result structure before writing the human-readable export."""
+    clean = redact_log(row)
+    append_log_json(run_dir / "results.jsonl", row)
+    append_question(run_dir, clean)
 
 
 def export_existing_runs() -> list[dict]:
@@ -66,7 +73,7 @@ def export_existing_runs() -> list[dict]:
     result_files = [p for folder in ("reports/ecommerce_rag",) for p in (WORKSPACE / folder).glob("*/results.jsonl")]
     for result_path in sorted(result_files):
         rows = read_jsonl(result_path)
-        content = "逐题结果：正常运行参考标签只参与计分；明确标记的开发集 oracle 诊断使用人工正确页，不用于报告实际检索效果。\n\n" + "".join(format_question(row) for row in rows)
+        content = "逐题结果：正常运行参考标签只参与计分；明确标记的开发集 oracle 诊断使用人工正确页，不用于报告实际检索效果。\n\n" + "".join(format_question(redact_log(row)) for row in rows)
         (result_path.parent / "逐题结果.txt").write_text(content, "utf-8", newline="\n")
         aggregate.append(content)
         counts.append({"run": result_path.parent.name, "records": len(rows), "txt": str(result_path.parent / "逐题结果.txt")})

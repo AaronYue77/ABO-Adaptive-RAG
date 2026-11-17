@@ -15,7 +15,7 @@ from d_compat_catalog import (ACCESSORIES, CatalogTool, accessory_kind, classify
                               normalize, resolve_models)
 from d_compat_route import BOTH, FIND, DemandClassifier, intent, read_proposal
 from common import WORKSPACE, file_hash, timestamp
-from audit import append_question
+from audit import append_result
 
 
 VERSION = "abo-accessory-agent-v1"
@@ -398,9 +398,7 @@ def save_result(out, result, text, index, config_sha, source_sha, *, gold=None, 
             "retrieval_trace":result["trace"],"raw_output":json.dumps(result["model_calls"],ensure_ascii=False),
             "metrics":metrics or {"evaluation":"unlabelled_interaction"},
             "status":"error" if result["decision"]=="unavailable" else "ok"}
-    with (out/"results.jsonl").open("a",encoding="utf-8") as f:
-        f.write(json.dumps(item,ensure_ascii=False)+"\n")
-    append_question(out,item)
+    append_result(out,item)
     return item
 
 

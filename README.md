@@ -7,7 +7,27 @@
 - 比较重量、尺寸和类别属性时分别核对来源。缺价格、库存或执行能力时说明边界。
 - Kaggle 用 Qwen3-VL-8B-Instruct 做短寒暄、模糊意图分类和图文读取。接入原有 C 阶段 120/50 LoRA 和 D 配件兼容四角色流程。
 
-[架构与证据流程](docs/ABO架构与验证.md) · [上游原始说明](README.upstream.md)
+[统一问答架构](docs/ABO架构与验证.md) · [A–D 阶段详细流程](docs/A-D阶段流程.md) · [日志与排查](docs/日志与排查.md) · [上游原始说明](README.upstream.md)
+
+## A-D 总流程
+
+```mermaid
+flowchart LR
+    data["ABO 商品、图像与来源"] --> a["A · 商品数据与证据<br/>全库、站点身份、索引与证据页"]
+    a --> b["B · 对话与取证<br/>搜索、追问、源字段和引用"]
+    b --> c["C · 8B 图文微调<br/>冻结证据、QLoRA、配对评测"]
+    a --> d["D · 配件兼容<br/>需求、型号、检索、复核"]
+    b --> d
+    c -->|正式适配器按需读图| d
+    entry["PowerShell、HTTP、Kaggle<br/>Adaptive-rag 分流"] --> b
+    entry --> d
+    b --> logbook["回答、来源与逐题记录<br/>对话、运行事件和问题记录"]
+    d --> logbook
+    a -.->|数据验收| logbook
+    c -.->|训练与同题评测| logbook
+```
+
+[A 阶段](docs/A-D阶段流程.md#a-阶段) · [B 阶段](docs/A-D阶段流程.md#b-阶段) · [C 阶段](docs/A-D阶段流程.md#c-阶段) · [D 阶段](docs/A-D阶段流程.md#d-阶段)
 
 ## Kaggle
 
@@ -32,6 +52,8 @@ python -m venv .venv
 ```
 
 本地默认运行目录、源字段和文本兼容证据。Kaggle 入口可用 GPU 执行读图。HTTP 可用 `-Command serve` 启动，默认地址为 `http://127.0.0.1:8769/docs`。请求 `POST /api/v1/chat` 时传入 `question`，再用返回的 `session_id` 续聊。
+
+运行 `-Command logs` 可查看操作、问题与逐题汇总的位置。每次会话保存可见对话、逐题证据和运行事件。远程 PowerShell 会话也保存已收到的结果和连接异常。[日志内容与排查方法](docs/日志与排查.md)
 
 ## 验收范围
 

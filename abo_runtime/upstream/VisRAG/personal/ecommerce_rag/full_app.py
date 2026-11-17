@@ -13,8 +13,9 @@ from full_catalog import ROOT,field
 from full_cards import ensure_card,ensure_photo_card,choose_pages,evidence_fields
 from full_retrieval import FullRetriever,MODES,exact_skus,expand
 from full_protocol import EVAL,SETTINGS,compact
-from common import WORKSPACE,write_json,file_hash,timestamp,operation,issue
-from audit import append_question,format_question
+from common import WORKSPACE,append_log,append_log_json,write_json,file_hash,timestamp,operation,issue
+from audit import append_result,format_question
+from log_privacy import redact_log
 from stage_a import Reader,snapshot
 from full_conversation import FullConversation,SCOPE_MESSAGE,VERSION as CONVERSATION_VERSION,bound_history,price_request,scope_route
 from full_catalogue import catalogue_request,category_search_request,catalog_navigation,overview_request,catalog_page,catalog_search_route,normalize_search,overview_chunk
@@ -185,15 +186,15 @@ class FullSession:
                         'question':question[:500],'listing_keys':list(self.selected)}
                     self.recent_tasks=(self.recent_tasks+[self.last_task])[-6:]
             row.update(total_seconds=time.perf_counter()-started,current_listing_keys_after=list(self.selected),model_load_count=self.app.reader.load_count)
-            with (self.out/'results.jsonl').open('a',encoding='utf-8') as f:f.write(json.dumps(row,ensure_ascii=False)+'\n')
-            if self.app.audit:append_question(self.out,row)
+            if self.app.audit:append_result(self.out,row)
             else:
-                with (self.out/'逐题结果.txt').open('a',encoding='utf-8') as f:f.write(format_question(row))
-            with self.transcript.open('a',encoding='utf-8') as f:f.write(f'\n第{self.turn}轮\n用户：{question}\n助手：{row["answer"]}\n动作：{row["action"]}\n引用：{row["citations"]}\n')
-            write_json(self.out/'session.json',{'session_id':self.key,'selected':self.selected,'candidates':self.candidates,'ended':self.ended,'turns':self.turn,
+                append_log_json(self.out/'results.jsonl',row)
+                append_log(self.out/'逐题结果.txt',format_question(redact_log(row)))
+            append_log(self.transcript,f'\n第{self.turn}轮\n用户：{question}\n助手：{row["answer"]}\n动作：{row["action"]}\n引用：{row["citations"]}\n')
+            write_json(self.out/'session.json',redact_log({'session_id':self.key,'selected':self.selected,'candidates':self.candidates,'ended':self.ended,'turns':self.turn,
                 'last_lane':self.last_lane,'general_history':self.general_history,'last_product_query':self.last_product_query,
                 'last_task':self.last_task,'recent_tasks':self.recent_tasks,'overview_shown':self.overview_shown,'catalog_offset':self.catalog_offset,
-                'selected_entities':self.selected_entities})
+                'selected_entities':self.selected_entities}))
             if return_audit:
                 return row
             return {k:row.get(k) for k in ('question_id','action','answer','citations','retrieved_pages','status','stage','total_seconds','retrieval_seconds','generation_seconds','global_catalog_records')}|{

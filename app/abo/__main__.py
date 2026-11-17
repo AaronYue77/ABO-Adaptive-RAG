@@ -10,18 +10,24 @@ from app.abo.service import AboDialogue, bind_runtime
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", nargs="?", choices=("check","chat","ask","cloud-chat","serve"), default="chat")
+    parser.add_argument("command", nargs="?", choices=("check","chat","ask","cloud-chat","serve","logs"), default="chat")
     parser.add_argument("--question")
     parser.add_argument("--gpu",action="store_true")
     parser.add_argument("--model-dir",type=Path)
     args = parser.parse_args()
     workspace = bind_runtime()
+    if args.command=="logs":
+        from audit import ALL_RESULTS_TXT
+        from common import ISSUES, OPERATIONS
+
+        for path in (OPERATIONS, ISSUES, ALL_RESULTS_TXT, workspace/"reports/ecommerce_rag"):
+            print(path)
+        return 0
     if args.command=="cloud-chat":
-        import sys
         from kaggle_chat_client import main as remote
 
-        sys.argv = [sys.argv[0],*(["--question",args.question] if args.question else [])]
-        return remote()
+        output = workspace / "reports/ecommerce_rag" / ("abo-adaptive-remote-"+uuid4().hex[:10])
+        return remote(["--question",args.question] if args.question else [], output=output)
     if args.command=="serve":
         if args.gpu:
             parser.error("使用 ABO_GPU=1 配置服务器的 GPU。")
@@ -44,7 +50,7 @@ def main():
         parser.error("ask 需要 --question。")
     output = workspace / "reports/ecommerce_rag" / ("abo-adaptive-chat-"+uuid4().hex[:10])
     output.mkdir(parents=True)
-    session = AboDialogue(output,gpu=args.gpu,model_dir=args.model_dir)
+    session = AboDialogue(output,gpu=args.gpu,model_dir=args.model_dir,entry=f"PowerShell {args.command}")
     try:
         def ask(question):
             row = session.respond(question)
@@ -66,7 +72,9 @@ def main():
                     break
     finally:
         session.close()
+        print("对话记录 "+str(output/"对话记录.txt"))
         print("逐题记录 "+str(output/"逐题结果.txt"))
+        print("运行记录 "+str(output/"运行记录.txt"))
     return 0
 
 

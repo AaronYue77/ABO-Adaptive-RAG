@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('chat','ask','check','cloud-chat','serve')][string]$Command = 'chat',
+    [ValidateSet('chat','ask','check','cloud-chat','serve','logs')][string]$Command = 'chat',
     [string]$Question = '',
     [switch]$Gpu,
     [string]$ModelDir = ''

@@ -1,5 +1,7 @@
 """Start the new Adaptive-rag ABO profile and run the release gates on Kaggle."""
 
+import atexit
+from datetime import datetime, timedelta, timezone
 import json
 from hashlib import file_digest
 from pathlib import Path
@@ -32,6 +34,25 @@ def configure_graph_runtime():
 
 
 def start():
+    log = Path("/kaggle/working/ABO启动记录.txt")
+
+    def boot_event(text):
+        with log.open("a",encoding="utf-8") as file:
+            stamp=datetime.now(timezone(timedelta(hours=8))).isoformat(timespec="seconds")
+            file.write(f"[{stamp}] {text}\n")
+
+    boot_event("开始初始化离线输入、GPU 和 ABO 目录")
+    try:
+        session = _start()
+    except Exception as error:
+        boot_event(f"启动失败 · {type(error).__name__} · 查看 Notebook 执行错误")
+        raise
+    boot_event(f"启动完成 · {session.output}")
+    atexit.register(session.close)
+    return session
+
+
+def _start():
     project = runpy.run_path(str(mounted_script("kaggle_8b_project.py")))
     project["setup"]()
     workspace = project["ROOT"]
@@ -48,7 +69,7 @@ def start():
 
     output = workspace/"reports/ecommerce_rag"/("abo-adaptive-kaggle-"+uuid4().hex[:10])
     output.mkdir(parents=True)
-    return AboDialogue(output,gpu=True)
+    return AboDialogue(output,gpu=True,entry="Kaggle Notebook")
 
 
 def verify(session):
@@ -64,4 +85,13 @@ def verify(session):
     print(f"Product follow-up across source categories: {category['passed']}/{category['categories']}.",flush=True)
     presentation = run_presentation_validation(session,session.output/"presentation.json")
     print(f"Customer reply presentation: {presentation['passed']}/{presentation['cases']}.",flush=True)
+    from common import read_jsonl
+
+    records=read_jsonl(session.output/"results.jsonl")
+    transcript=(session.output/"对话记录.txt").read_text("utf-8")
+    events=read_jsonl(session.output/"运行事件.jsonl")
+    assert {"product","compatibility"} <= {row["entry_lane"] for row in records}
+    assert transcript.count("\n用户：")==len(records)
+    assert events[0]["event"]=="start" and events[1]["event"]=="ready"
+    print(f"Unified session transcript verified: {len(records)} turns.",flush=True)
     return result

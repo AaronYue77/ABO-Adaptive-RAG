@@ -23,9 +23,11 @@ def create_abo_app():
 
     @asynccontextmanager
     async def lifespan(_app):
-        yield
-        for session in sessions.values():
-            session.close()
+        try:
+            yield
+        finally:
+            for session in sessions.values():
+                session.close()
 
     app = FastAPI(title="ABO Adaptive RAG", lifespan=lifespan)
 
@@ -46,12 +48,13 @@ def create_abo_app():
                     raise HTTPException(503, "会话数量达到上限。")
                 output = workspace / "reports/ecommerce_rag" / ("abo-adaptive-api-"+key)
                 output.mkdir(parents=True)
-                sessions[key] = AboDialogue(output,gpu=os.environ.get("ABO_GPU")=="1")
+                sessions[key] = AboDialogue(output,gpu=os.environ.get("ABO_GPU")=="1",entry="HTTP")
             session = sessions[key]
             row = session.respond(body.question)
             if row["decision"]=="exit":
                 sessions.pop(key).close()
         return {"session_id":key,"answer":row["display_answer"],"action":row["decision"],
-                "sources":row["display_sources"],"citations":row["citations"],"strategy":row["adaptive"]["strategy"]}
+                "sources":row["display_sources"],"citations":row["citations"],"strategy":row["adaptive"]["strategy"],
+                "run_name":session.output.name,"question_id":row["question_id"],"issue_id":row.get("issue_id")}
 
     return app
