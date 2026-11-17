@@ -4,11 +4,14 @@ import re
 import unicodedata
 from full_cards import evidence_fields,display_values
 from catalog_labels_zh import CATEGORY_LABELS
+from catalog_constraints import HEEL_QUERY, named_constraints, remove_constraints, size_evidence
 from full_retrieval import EXPANSIONS
 
 # Public language aliases map to actual source types; unrecognized queries still
 # use semantic query planning. This table does not limit the searchable catalog.
 CATEGORIES=[
+ (r'高跟凉鞋','heel sandal',['SANDAL']),
+ (HEEL_QUERY,'heel pump court shoe',['SHOES','SANDAL']),
  (r'运动鞋|跑鞋|sneakers?|running shoes','shoes sneakers',['SHOES','TECHNICAL_SPORT_SHOE']),
  (r'靴子|短靴|长靴|boots?','boot',['BOOT']),
  (r'凉鞋|sandals?','sandal',['SANDAL']),
@@ -29,12 +32,48 @@ CATEGORIES=[
  (r'手提包|handbags?','handbag',['HANDBAG']),
  (r'帽子|hats?','hat',['HAT']),
  (r'桌子|tables?','table',['TABLE']),
+ (r'手表|腕表|wristwatches|wristwatch|\bwatches?\b','watch',['WATCH']),
 ]
 LABELS={'brand':'品牌','color':'颜色','material':'材质','model_number':'型号','product_type':'原始类别',
         'fabric_type':'面料','style':'款式','size':'尺寸标记','width':'宽度','height':'高度','length':'长度','weight':'重量'}
 EXTRA_LABELS={'color_code':'颜色编码','finish_type':'表面处理','item_shape':'形状','pattern':'图案',
               'model_name':'型号名称','model_year':'型号年份','product_description':'商品描述（源文）',
               'item_keywords':'源记录关键词'}
+
+COUNT_WORD = r"(?:有|收录了?|包含|记录了?)?(?:多少|几个|几款|几条|几件|几种)(?:[个款条件种])?"
+COUNT_TAIL = r"(?:商品(?:记录)?|产品(?:记录)?|记录|类目|品类)?"
+COUNT_PREFIX = re.compile(r"^(?:(?:你好(?:呀)?|您好|早上好|请问|请告诉我|麻烦|请|想知道|查一下|统计一下)[\s，,。.!！:：]*)+")
+MARKETPLACES = {"美国站":"amazon.com", "英国站":"amazon.co.uk", "加拿大站":"amazon.ca",
+                "澳洲站":"amazon.com.au", "澳大利亚站":"amazon.com.au", "法国站":"amazon.fr",
+                "德国站":"amazon.de", "日本站":"amazon.co.jp", "印度站":"amazon.in"}
+COUNT_DOMAIN = re.compile(r"(?:amazon\.[a-z0-9.]+|"+"|".join(MARKETPLACES)+r")\s*(?:上面|上的?|的)?", re.I)
+
+
+def count_request(text):
+    """Extract a catalog subject from quantity questions with no quantity unit or fact attached."""
+    text = COUNT_PREFIX.sub("", text.strip(" ？?。！!"))
+    if re.search(r"每包|几包|每箱|包装|这款|这件|这双|所选|这台|库存|在售|有货|现货|现行|代码", text):
+        return None
+    domain = COUNT_DOMAIN.search(text)
+    if domain:
+        domain_name = re.match(r"amazon\.[a-z0-9.]+|"+"|".join(MARKETPLACES), domain[0], re.I)[0]
+        market = MARKETPLACES.get(domain_name, domain_name.lower())
+        text = (text[:domain.start()] + text[domain.end():]).strip()
+    else:
+        market = None
+    scoped = re.match(r"^(?:(?:ABO|数据库|资料库|知识库|目录|全库|整个库|库里)\s*(?:里面|里|中|内)?\s*(?:的)?\s*)+", text, re.I)
+    if scoped:
+        text = text[scoped.end():]
+    match = re.fullmatch(rf"(?P<subject>.*?)(?:一共|总共|总计|总数|数量)?\s*{COUNT_WORD}\s*{COUNT_TAIL}", text)
+    if not match:
+        match = re.fullmatch(rf"{COUNT_WORD}\s*(?P<subject>.+)", text)
+    if not match:
+        return None
+    subject = re.sub(r"(?:一共|总共|总计|总数|数量|目录里|全部)$", "", match["subject"].strip()).strip()
+    if not subject and not (scoped or market or re.search(r"商品|产品|记录|类目|品类|目录|全库|ABO|知识库", text, re.I)):
+        return None
+    total_categories = not subject and bool(re.search(r"类目|品类", text))
+    return subject, market, total_categories
 
 
 def catalogue_request(text):
@@ -153,33 +192,43 @@ def catalog_page(manifest,offset=0,budget=14):
     return '\n'.join(lines),offset+len(chunk),[{'product_type':k,'label':l,'records':n} for k,l,n in chunk]
 
 
-def normalize_search(text,manifest,filters=None,*,separate_terms=True):
+def normalize_search(text,manifest,filters=None,*,separate_terms=True,constrained=False):
     filters=dict(filters or {});query=text.strip()
+    if constrained:
+        query = COUNT_PREFIX.sub('', query)
     request=SEARCH_REQUEST.match(query)
     if request:query=request[1]
     query=re.sub(r'^(?:选中|选择|就要|就|选)\s*','',query)
     query=re.sub(r'[呢吧？?！!。\s]+$','',query)
+    criteria = named_constraints(query) if constrained else {}
+    if constrained and re.search(HEEL_QUERY, query, re.I):
+        criteria['style'] = 'high_heel'
+    if criteria:
+        query = remove_constraints(query, criteria)
+        query = re.sub(r'^(?:的\s*)+|(?:的\s*)+$', '', query)
     exact=exact_category_types(query,manifest)
     query=re.sub(r'(?:(?:这|那)(?:一)?(?:类|种)(?:的?(?:商品|产品))?|类的?(?:商品|产品)|商品|产品)$','',query).strip()
-    inferred=[];matched=None
+    inferred=[];matched=None;category_query=None
     if exact:
         inferred=exact
         matched='exact_source_type' if query.upper() in exact else 'chinese_catalog_label'
         query=' '.join(exact)
+        category_query=query
     for pattern,english,kinds in ([] if inferred else CATEGORIES):
         if re.search(pattern,query,re.I):
             inferred=[k for k in kinds if k in manifest['product_types']]
             replacement=f' {english} ' if separate_terms else english
-            query=re.sub(pattern,replacement,query,flags=re.I);matched=pattern;break
+            query=re.sub(pattern,replacement,query,flags=re.I);matched=pattern;category_query=english;break
     if inferred:
         if filters.get('product_type') and filters['product_type'] not in inferred:
             raise ValueError('Requested category conflicts with the explicit product_type filter')
         if not filters.get('product_type') and not filters.get('product_types'):filters['product_types']=inferred
     pattern='|'.join(re.escape(k) for k in sorted(EXPANSIONS,key=len,reverse=True))
     query=re.sub(pattern,lambda m:f' {EXPANSIONS[m[0]]} ' if separate_terms else EXPANSIONS[m[0]],query)
-    query=re.sub(r'类的?|的商品|的产品',' ',query)
+    query=re.sub(r'类的?|的商品|的产品|(?:^|\s)的(?=\s|$)',' ',query)
     query=' '.join(query.split())
-    return {'original_query':text,'query':query,'filters':filters,'category_alias':matched,
+    return {'original_query':text,'query':query,'filters':filters,'category_alias':matched,'criteria':criteria,
+      'category_query':category_query,
       'inferred_product_types':inferred,'needs_semantic_translation':bool(re.search(r'[\u4e00-\u9fff]',query))}
 
 
@@ -197,6 +246,9 @@ def overview_items(product,doc,*,include_title_dimension=False):
     raw=json.loads(product['raw_json']);items=[]
     for i,(key,value) in enumerate(evidence_fields(raw)):
         items.append({'item_id':f'field:{key}:{i}','label':LABELS.get(key,key),'value':value,'source_field':key})
+    if not any(item['source_field']=='size' for item in items):
+        for index, (_, _, quote, field) in enumerate(size_evidence(raw,product['title'],product['product_type'])):
+            items.append({'item_id':f'field:title_size:{index}','label':'标题标注尺码','value':quote,'source_field':field})
     if include_title_dimension and not any(i["source_field"] in {"width","length","height"} for i in items):
         title_dimension = TITLE_DIMENSION.search(product["title"])
         if title_dimension:

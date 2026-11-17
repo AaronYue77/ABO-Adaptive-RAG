@@ -1,11 +1,13 @@
 """Build a self-contained private Notebook fixture from the new project."""
 
 import argparse
+from base64 import b64encode
 import json
-from hashlib import file_digest
+from hashlib import file_digest, sha256
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from zipfile import ZIP_DEFLATED, ZipFile
+from zlib import compress
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,7 +18,27 @@ CATALOG = Path("data/ecommerce_rag/abo-full-v1")
 ADAPTER = Path("reports/ecommerce_rag/stage-c-8b-120-20261110/adapter")
 
 
-def notebook(online=False):
+def source_files():
+    library=ROOT/'abo_runtime'
+    paths={path.relative_to(library).as_posix(): path
+           for path in sorted((library/'upstream/VisRAG/personal').rglob('*.py'))
+           if not path.name.startswith('test_')}
+    for group in ('abo','agents','core'):
+        for path in sorted((ROOT/'app'/group).glob('*.py')):
+            if group!='agents' or path.name in {'__init__.py','abo_graph.py'}:
+                paths[path.relative_to(ROOT).as_posix()]=path
+    return {'app/__init__.py': ROOT/'app/__init__.py', **paths}
+
+
+def source_overlay():
+    changes={}
+    for name,path in source_files().items():
+        code=path.read_text('utf-8')
+        changes[name]={'sha256':sha256(code.encode('utf-8')).hexdigest(), 'code':code}
+    return b64encode(compress(json.dumps(changes,ensure_ascii=False).encode('utf-8'),9)).decode('ascii')
+
+
+def notebook(online=False, overlay=None):
     init = '''from pathlib import Path
 from zipfile import ZipFile
 import runpy
@@ -58,6 +80,8 @@ print("会话日志", chat.output)
         code = (ROOT/"scripts/kaggle_abo.py").read_text("utf-8")
         init = (init[:start] + '    script = Path("/kaggle/working/standalone_abo.py")\n'
                 + f'    script.write_text({code!r}, encoding="utf-8")\n' + init[end:])
+        if overlay:
+            init = init.replace('bootstrap["start"]()',f'bootstrap["start"](source_overlay={overlay!r})',1)
     verify = 'checks = bootstrap["verify"](chat)\n'
     sample = 'ask("重置");\nask("我想查询电风扇这类商品");\n'
     description = ("# ABO Adaptive RAG 商品助手\n"
@@ -78,16 +102,9 @@ def prepare(cloud_input):
     kernel = ROOT/".release/kernel"
     fixture.mkdir(parents=True,exist_ok=True)
     kernel.mkdir(parents=True,exist_ok=True)
-    files = {}
+    files = source_files()
     library = ROOT/"abo_runtime"
-    for path in sorted((library/"upstream/VisRAG/personal").rglob("*.py")):
-        if not path.name.startswith("test_"):
-            files[path.relative_to(library).as_posix()] = path
-    for group in ("abo","agents","core"):
-        for path in (ROOT/"app"/group).glob("*.py"):
-            if group!="agents" or path.name in {"__init__.py","abo_graph.py"}:
-                files[path.relative_to(ROOT).as_posix()] = path
-    for name in ("app/__init__.py", "scripts/kaggle_abo.py", "scripts/kaggle_abo_checks.py"):
+    for name in ("scripts/kaggle_abo.py", "scripts/kaggle_abo_checks.py"):
         files[name] = ROOT/name
     for name in ("data/ecommerce_rag/stage-c-active.json", "data/ecommerce_rag/policies-us-v1/clauses.json",
                  *[f"data/ecommerce_rag/abo-stage-d-v1/{name}" for name in ("cases.jsonl", "protocol.json", "router.json")],
@@ -141,7 +158,8 @@ def write_notebook(kernel, online=False):
                    kernel_type="notebook",is_private=True,enable_gpu=True,enable_internet=online,keywords=["gpu"],
                    dataset_sources=[FIXTURE],model_sources=["qwen-lm/qwen-3-vl/Transformers/8b-instruct/1"])
     (kernel/"kernel-metadata.json").write_text(json.dumps(release,indent=2)+"\n","utf-8")
-    data=json.dumps(notebook(online),ensure_ascii=False,indent=2)+"\n"
+    overlay=source_overlay() if online else None
+    data=json.dumps(notebook(online,overlay),ensure_ascii=False,indent=2)+"\n"
     (kernel/f"{SLUG}.ipynb").write_text(data,"utf-8")
     (ROOT/"scripts/kaggle_abo.ipynb").write_text(data,"utf-8")
 

@@ -1,9 +1,10 @@
 """Start the new Adaptive-rag ABO profile and run the release gates on Kaggle."""
 
 import atexit
+from base64 import b64decode
 from datetime import datetime, timedelta, timezone
 import json
-from hashlib import file_digest
+from hashlib import file_digest, sha256
 from pathlib import Path
 import os
 import runpy
@@ -13,6 +14,7 @@ import sys
 from uuid import uuid4
 from urllib.request import urlopen
 from zipfile import ZipFile
+from zlib import decompress
 
 
 ROOT = Path("/kaggle/working/abo-rag")
@@ -36,6 +38,25 @@ def stage_release():
             if file_digest(stream,"sha256").hexdigest() != digest:
                 raise ValueError(f"Release checksum mismatch: {relative}")
     print(f"Verified {len(manifest)} release files.",flush=True)
+
+
+def apply_source_overlay(workspace, encoded):
+    source = json.loads(decompress(b64decode(encoded,validate=True)))
+    hashes = {}
+    for name, entry in source.items():
+        target = (workspace/name).resolve()
+        if (not target.is_relative_to(workspace.resolve()) or target.suffix != '.py' or
+            not name.startswith(('app/','upstream/VisRAG/personal/'))):
+            raise ValueError(f'Invalid release source path: {name}')
+        content=entry['code'].encode('utf-8')
+        digest=sha256(content).hexdigest()
+        if digest!=entry['sha256']:
+            raise ValueError(f'Source overlay checksum mismatch: {name}')
+        target.parent.mkdir(parents=True,exist_ok=True)
+        target.write_bytes(content)
+        hashes[name]=digest
+    (workspace/'source-overlay-manifest.json').write_text(json.dumps(hashes,indent=2),'utf-8')
+    print(f'Applied {len(hashes)} verified source updates.',flush=True)
 
 
 def download(url, path):
@@ -88,7 +109,7 @@ def configure_graph_runtime():
     set_verbose(False)
 
 
-def start():
+def start(*, source_overlay=None):
     log = Path("/kaggle/working/ABO启动记录.txt")
 
     def boot_event(text):
@@ -98,7 +119,7 @@ def start():
 
     boot_event("开始初始化离线输入、GPU 和 ABO 目录")
     try:
-        session = _start()
+        session = _start(source_overlay)
     except Exception as error:
         boot_event(f"启动失败 · {type(error).__name__} · 查看 Notebook 执行错误")
         raise
@@ -107,8 +128,10 @@ def start():
     return session
 
 
-def _start():
+def _start(source_overlay=None):
     stage_release()
+    if source_overlay:
+        apply_source_overlay(ROOT,source_overlay)
     if not (MODEL/"config.json").is_file():
         raise FileNotFoundError(f"Attach the official Kaggle model: {MODEL}")
     install = [sys.executable,"-m","pip","install","--no-deps"]
@@ -148,6 +171,10 @@ def verify(session):
     print(f"Product follow-up across source categories: {category['passed']}/{category['categories']}.",flush=True)
     presentation = run_presentation_validation(session,session.output/"presentation.json")
     print(f"Customer reply presentation: {presentation['passed']}/{presentation['cases']}.",flush=True)
+    from app.abo.shopping_validation import run_shopping_validation
+
+    shopping = run_shopping_validation(session,session.output/'shopping-followups.json')
+    print(f"Shopping dialogue regression: {shopping['passed']}/{shopping['cases']}.",flush=True)
     from common import read_jsonl
 
     records=read_jsonl(session.output/"results.jsonl")

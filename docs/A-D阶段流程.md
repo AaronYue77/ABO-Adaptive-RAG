@@ -37,7 +37,9 @@ flowchart TD
     q["当前问题与本会话选择"] --> route{"明确规则与受约束的语义分类"}
     route -->|"问候、范围外、实时或交易请求"| plain["寒暄、说明范围或解释可用证据"]
     route -->|浏览目录| directory["运行目录分页，确认用户想查的类目"]
-    route -->|按名找商品| search["查询归一化，按真实类目和站点筛选"]
+    route -->|问数量| tally["按记录、类目、站点和已核实条件统计"]
+    tally -->|继续查看候选| search
+    route -->|查找或调整条件| search["按真实类目、站点和源字段条件筛选"]
     directory -->|指定类目| search
     search --> rank["日常使用 SQLite BM25<br/>离线对照 E5 / RRF 及可选重排"]
     rank --> choose["展示原始名称，确认商品并保存 ASIN@站点"]
@@ -45,12 +47,15 @@ flowchart TD
     route -->|指定商品或追问| evidence{"本轮需要的来源"}
     choose --> evidence
     evidence -->|明确规格| fields["直接读源值与单位"]
+    evidence -->|尺码或变体追问| variants["读原标题与字段，查同站点同品牌同型号"]
     evidence -->|概览、继续或完整展示| detail["复用商品身份，按源条目组织内容"]
     evidence -->|比较或复合请求| multi["按商品和站点独立查证，保留部分可答证据"]
     evidence -->|图片或页内问题| reader["按需选择原图或证据页，交给 8B Reader"]
     route -->|售后| policy["核对站点与已保存的政策快照"]
     reader --> guard["检查答案和引用，按已启用策略有限补查"]
     fields --> answer["组织可读回答和来源，写入会话、逐题与运行日志"]
+    tally --> answer
+    variants --> answer
     detail --> answer
     multi --> answer
     guard --> answer
@@ -59,7 +64,7 @@ flowchart TD
     rank -.-> offline["独立的冻结检索对照<br/>以商品身份与家族计分"]
 ```
 
-目录的页码和当前商品分别维护。多商品问题逐项核对，缺少实时价格、库存或证据时说明原因。Notebook 与本地日常会话使用 BM25。本地 `-Visual` 可对文字检索候选做商品图重排。B 的冻结检索对照另有独立协议。
+目录页码、上一轮筛选条件和当前选中的商品分别维护。目录数量以历史商品记录为单位，同一 ASIN 在不同站点可分别出现。明确的颜色、材质、尺码和款式条件在排序前核对，查询现有库存时只报告可验证的历史字段。尺码保留 US、UK、EU 等原始标注，同站点的变体需核对品牌与型号。Notebook 与本地日常会话使用 BM25。本地 `-Visual` 可对文字检索候选做商品图重排。B 的冻结检索对照另有独立协议。
 
 - [新项目会话路由](../app/abo/service.py) · [商品对话与逐件答证](../abo_runtime/upstream/VisRAG/personal/ecommerce_rag/full_app.py)
 - [检索模式](../abo_runtime/upstream/VisRAG/personal/ecommerce_rag/full_retrieval.py) · [原始字段、单位和图片证据](../abo_runtime/upstream/VisRAG/personal/ecommerce_rag/full_evidence.py) · [售后快照](../abo_runtime/upstream/VisRAG/personal/ecommerce_rag/full_policy.py)

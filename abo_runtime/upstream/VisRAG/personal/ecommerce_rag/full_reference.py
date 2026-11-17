@@ -5,11 +5,20 @@ from full_catalogue import CATEGORIES, continuation_request, exact_category_type
 from full_evidence import FIELD_NAMES, PHOTO_REQUEST
 
 
-ORDINAL = re.compile(r'第([0-9]{1,2}|[一二三四五六七八九十两])(?:个|款|件|台)?')
+ORDINAL = re.compile(r'第(\d+|[一二三四五六七八九十百千万零两]+)(?:个|款|件|台|双)?')
 
 
 def ordinal_index(value):
-    return int(value)-1 if value.isdigit() else '一二三四五六七八九十'.index(value.replace('两','二'))
+    if value.isdecimal():
+        return int(value)-1 if len(value)<=4 else -1
+    value=value.replace('两','二')
+    digits={number:index for index,number in enumerate('零一二三四五六七八九')}
+    if value in digits:
+        return digits[value]-1
+    tens, separator, ones=value.partition('十')
+    if separator and (not tens or tens in digits) and (not ones or ones in digits):
+        return 10*digits.get(tens,1)+digits.get(ones,0)-1
+    return -1
 
 
 def ordinal_choice(text,last_task):

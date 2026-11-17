@@ -4,6 +4,8 @@ import re
 from decimal import Decimal
 
 from full_cards import choose_pages, evidence_fields
+from catalog_constraints import (SIZE_LOOKUP, STOCK_WORDS, VARIANT_WORDS, field_texts,
+                                 matches_criteria, named_constraints, size_evidence, size_matches)
 
 
 VERSION = "source-evidence-v3"
@@ -133,6 +135,106 @@ def read_fields(products, fields):
     }
 
 
+def variant_request(question):
+    text = LISTING_REF.sub('', question)
+    if STOCK_WORDS.search(text) or PHOTO_REQUEST.search(text):
+        return None
+    criteria = named_constraints(text)
+    if criteria.get('ambiguous'):
+        return None
+    if SIZE_LOOKUP.search(text) and not re.search(r'尺码表|换算|应该穿|穿多大', text):
+        return criteria
+    if VARIANT_WORDS.search(text) and ("size" in criteria or "color" in criteria):
+        return criteria
+    return None
+
+
+def answer_variant(product, criteria, retriever):
+    """Report the selected listing and show a matching same-model record only with source proof."""
+    raw = json.loads(product['raw_json'])
+    key = product['listing_key']
+    citations, evidence, candidates = [], [], []
+
+    def source(row, field):
+        identity = row['listing_key']
+        citation = f"{identity}:metadata:{field}"
+        if citation not in citations:
+            citations.append(citation)
+            evidence.append({'page_id':citation,'doc_id':identity,'listing_key':identity,'page':None,
+                             'sku':row['sku'],'rank':len(evidence)+1,'score':1.0,'field':field,
+                             'text_source':'original_listing_variant',
+                             'source':{'member':row['source_member'],'line':row['source_line'],'sha256':row['raw_sha256']}})
+
+    observed = size_evidence(raw, product['title'], product['product_type'])
+    ask_size = 'size' in criteria or not criteria
+    answers = []
+    if ask_size:
+        if observed:
+            answers.append('当前这条商品资料标注的尺码是 '+ ' / '.join(dict.fromkeys(item[2] for item in observed))+'。')
+            for item in observed:
+                source(product, item[3])
+        else:
+            answers.append('当前这条商品资料的原始字段和标题里没有明确标注尺码。')
+    if 'color' in criteria:
+        colors = list(dict.fromkeys(field_texts(raw, 'color')))
+        if colors:
+            source(product, 'color')
+            answers.append('当前记录的颜色是 '+' / '.join(colors)+'。')
+    encoded = json.dumps(criteria, ensure_ascii=False)
+    confirmed = matches_criteria(product['title'], product['product_type'], product['raw_json'], encoded)
+    # A bare numeric size can refer to different scales. Show the actual scale, never convert it.
+    if criteria and confirmed:
+        if not citations:
+            source(product, 'item_name')
+        if 'size' in criteria and size_matches(observed, criteria['size']):
+            answers.append('这条历史记录包含你问的尺码标记。')
+    elif criteria:
+        models = set(field_texts(raw, 'model_number'))
+        if product['brand'] and product['family_key'] and models:
+            same_market = retriever.db.execute(
+                'SELECT * FROM products WHERE family_key=? AND domain=? AND brand=? AND product_type=? '
+                'AND listing_key<>? ORDER BY listing_key',
+                (product['family_key'], product['domain'], product['brand'], product['product_type'], key))
+            color_values = {value.casefold() for value in field_texts(raw, 'color')}
+            for item in same_market:
+                variant = dict(item)
+                variant_raw = json.loads(variant['raw_json'])
+                if not (models & set(field_texts(variant_raw, 'model_number'))):
+                    continue
+                if 'color' not in criteria and color_values and not (
+                    color_values & {value.casefold() for value in field_texts(variant_raw, 'color')}
+                ):
+                    continue
+                if not matches_criteria(variant['title'], variant['product_type'], variant['raw_json'], encoded):
+                    continue
+                candidates.append(variant)
+                source(variant, 'item_name')
+                if 'color' in criteria:
+                    source(variant, 'color' if list(field_texts(variant_raw, 'color')) else 'item_name')
+                if len(candidates) == 3:
+                    break
+        label = (' '.join(criteria['size']).strip()+' 码') if 'size' in criteria else ''
+        if 'color' in criteria:
+            label = '、'.join(criteria['color']) if isinstance(criteria['color'], list) else criteria['color']
+            if 'size' in criteria:
+                label += '，'+' '.join(criteria['size']).strip()+' 码'
+        if candidates:
+            answers.append(f'同站点另有同品牌同型号的历史记录符合「{label}」：')
+            answers.extend(f'{index}. {item["title"]}' for index, item in enumerate(candidates, 1))
+        else:
+            answers.append(f'在当前站点的同品牌同型号资料中，暂未找到能核实「{label}」的记录。')
+            if 'size' in criteria and observed and not criteria['size'][0]:
+                answers.append('不同尺码体系的数字不能直接比较，你可以指定 EU、US 或 UK。')
+    if criteria:
+        answers.append('ABO 收录的是历史商品资料，实时库存需查看实际商品页面。')
+    if not citations:
+        source(product, 'item_name')
+    action = 'answer' if ((not criteria and observed) or (criteria and (confirmed or candidates))) else 'partial' if observed else 'not_found'
+    return {'action':action,'answer':'\n'.join(answers),'citations':citations,'retrieved_pages':evidence,
+            'answer_source':'original_listing_variant','task_kind':'product_variant',
+            'retrieval_trace':{'variant_criteria':criteria,'same_market_model_matches':len(candidates)}}, candidates
+
+
 COMPARE_AXES = {
     "重":("weight","max"), "轻":("weight","min"), "宽":("width","max"), "窄":("width","min"),
     "高":("height","max"), "矮":("height","min"), "长":("length","max"), "短":("length","min"),
@@ -191,10 +293,17 @@ def compare_source_fields(products, axis):
 
 def fields_alongside_price(question):
     """Retain independently resolvable fields in a plain field-plus-price list."""
-    price = r"(?:价格|售价|原价|到手价|成交价|折后价)"
+    return fields_alongside(question, r"(?:价格|售价|原价|到手价|成交价|折后价)")
+
+
+def fields_alongside_stock(question):
+    return fields_alongside(question, r"(?:(?:实时|当前|现有|现在的)?库存|在售状态)")
+
+
+def fields_alongside(question, unavailable):
     connector = r"(?:以及|和|与|、)"
-    without_price = re.sub(rf"{connector}\s*{price}|{price}\s*{connector}", "", question, count=1)
-    return requested_fields(without_price) if without_price != question else ()
+    remaining = re.sub(rf"{connector}\s*{unavailable}|{unavailable}\s*{connector}", "", question, count=1)
+    return requested_fields(remaining) if remaining != question else ()
 
 
 def guard_identity_echo(result, products, question):

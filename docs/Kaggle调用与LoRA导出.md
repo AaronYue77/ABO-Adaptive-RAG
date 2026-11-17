@@ -6,7 +6,9 @@
 2. 运行第一个代码单元格。看到「商品助手已就绪」后，在 Notebook 运行 `ask("我想查电风扇这类商品")`。模型、正式 LoRA、商品资料与推理都在 Kaggle 会话中。
 3. 需要从 PowerShell 输入时，保持会话运行，在 **Run → Kaggle Jupyter Server** 复制 **VSCode Compatible URL**，在项目目录运行 `.\scripts\run_abo.ps1 -Command cloud-chat`，然后粘贴到终端提示。该地址用于连接自己的会话。
 
-Notebook v6 的 L4 保存运行完成，使用本项目的私有发布 Dataset 和官方 Qwen 模型挂载。跨类目回归 49/49，类目商品追问 576/576，字段与引用抽查 1,089/1,089。实时 PowerShell 问答需要一个正在运行的交互会话。
+Notebook v7 的 L4 保存运行完成，使用本项目的私有发布 Dataset 和官方 Qwen 模型挂载。新增购物对话回归 34/34，涵盖类目与站点统计、搜索后调整条件、尺码与变体核对、规格和实时库存的混合请求。原跨类目回归 49/49，类目商品追问 576/576，字段与引用抽查 1,089/1,089。
+
+已启动的 PowerShell 连接使用对应 Kaggle 内核中的已加载版本。切换到 v7 时，在最新 Notebook 启动新 GPU 会话并执行首个代码单元格，然后用新会话的 VSCode Compatible URL 连接 PowerShell。
 
 ## 云端微调与发布
 

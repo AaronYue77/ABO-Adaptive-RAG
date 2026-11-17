@@ -18,9 +18,13 @@ from audit import append_result,format_question
 from log_privacy import redact_log
 from stage_a import Reader,snapshot
 from full_conversation import FullConversation,SCOPE_MESSAGE,VERSION as CONVERSATION_VERSION,bound_history,price_request,scope_route
-from full_catalogue import catalogue_request,category_search_request,catalog_navigation,overview_request,catalog_page,catalog_search_route,normalize_search,overview_chunk
+from full_catalogue import (SEARCH_REQUEST, catalogue_request, category_search_request, catalog_navigation, count_request,
+                            overview_request, catalog_page, catalog_search_route, normalize_search, overview_chunk)
 from full_reference import ORDINAL,bare_category_choice,normalize_selected_field_reference,ordinal_index,product_task,ordinal_choice,product_detail_followup,selected_name_reference
-from full_evidence import VERSION as EVIDENCE_VERSION,LISTING_REF,PHOTO_REQUEST,alternate_pages,comparison_axis,compare_source_fields,fields_alongside_price,guard_identity_echo,photo_pages,plan_field_lookups,read_fields,requested_fields,split_photo_request
+from full_evidence import (VERSION as EVIDENCE_VERSION, LISTING_REF, PHOTO_REQUEST, alternate_pages, answer_variant,
+                           comparison_axis, compare_source_fields, fields_alongside_price, fields_alongside_stock, guard_identity_echo,
+                           photo_pages, plan_field_lookups, read_fields, requested_fields, split_photo_request, variant_request)
+from catalog_constraints import COLORS, MATERIALS, STOCK_WORDS, refine_constraints
 from full_policy import POLICY_FILE,policy_answer
 from qwen8_runtime import Qwen8Runtime, MODEL_ID as QWEN8, REVISION as QWEN8_REVISION, model_directory
 
@@ -44,6 +48,7 @@ def boundary(question):
 
 PRICE_UNAVAILABLE = ('ABO 商品记录没有可核实的价格，当前也没有实时价格来源。'
                      '无法判断哪款更贵、是否打折或是否符合预算。可以继续比较商品资料中已有的规格和包装。')
+STOCK_UNAVAILABLE = 'ABO 只收录历史商品资料，当前库存和是否在售需查看对应站点的商品页面。'
 IDENTITY_REQUEST = re.compile(
     r'(?:请问|请)?(?:这款|这个|当前|所选)?(?:商品)?(?:的)?(?:商品编号|编号|货号|ASIN|SKU)(?:是)?什么'
     r'|(?:请|帮我|给我)?(?:显示|列出|告诉我)(?:目前|当前|所选|当前候选|候选|这款)?(?:商品)?(?:的)?(?:编号|货号|ASIN|SKU)',
@@ -110,15 +115,21 @@ class FullApplication:
                 self.sessions[key]=FullSession(self,key)
             return self.sessions[key]
     def respond(self,question,request=None,session_id=None):return self.session(session_id).respond(question,request)
-    def search_catalog(self,query,mode=None,top_k=5,filters=None,trace=None):
+    def search_catalog(self,query,mode=None,top_k=5,filters=None,trace=None,*,refinement=None):
         if not isinstance(query,str) or not 0<len(query.strip())<=2000:raise ValueError('Query must contain1..2000 characters')
         if not isinstance(filters or {},dict) or set(filters or {})-{'product_type','product_types','domain'}:raise ValueError('Invalid public category filters')
         if mode is not None and mode not in MODES:raise ValueError('Unknown retrieval mode')
         if not isinstance(top_k,int) or not 1<=top_k<=50:raise ValueError('Invalid top_k')
-        plan=normalize_search(query,self.retriever.manifest,filters,separate_terms=not self.legacy_evidence)
+        plan=normalize_search(query,self.retriever.manifest,filters,separate_terms=not self.legacy_evidence,
+                              constrained=not self.legacy_evidence)
+        plan['criteria'].update(refinement or {})
+        if plan['criteria'].get('ambiguous') or (not plan['query'] and plan['criteria']):
+            return {'items':[],'seconds':0.0,'trace':{'public_search_plan':plan,'search_clarification':True}}
+        category_only = bool(plan['criteria'] and plan['query'] == plan['category_query'])
         if plan['needs_semantic_translation'] and self.model_available:
             try:
-                proposal=self.conversation.plan_search(query,self.retriever.manifest['product_types'],trace if trace is not None else [])
+                source_query = plan['query'] if plan['criteria'] else query
+                proposal=self.conversation.plan_search(source_query,self.retriever.manifest['product_types'],trace if trace is not None else [])
                 plan['semantic_proposal']=proposal;plan['query']=proposal['query']
                 if proposal['product_types'] and not any(k in plan['filters'] for k in ('product_type','product_types')):
                     plan['filters']['product_types']=proposal['product_types']
@@ -126,7 +137,18 @@ class FullApplication:
         if plan['needs_semantic_translation'] and not self.model_available:
             plan['semantic_plan_fallback']='catalog_native_text'
         if not plan['query'].strip():raise ValueError('Please specify a product name or category')
-        result=self.retriever.search(plan['query'],mode or self.mode,top_k,plan['filters'],expand_query=False)
+        effective = plan['query']
+        if category_only:
+            boosts=[]
+            for key,aliases in (('color',COLORS),('material',MATERIALS)):
+                selected=plan['criteria'].get(key,[])
+                for label in ([selected] if isinstance(selected,str) else selected):
+                    boosts.append(aliases[label].split('|',1)[0])
+            known_words=set(effective.casefold().split())
+            types=[kind for kind in plan['inferred_product_types'] if kind.casefold() not in known_words]
+            effective=' '.join((*boosts,effective,*types))
+        result=self.retriever.search(effective,mode or self.mode,top_k,plan['filters'],expand_query=False,
+                                     criteria=plan['criteria'])
         result['trace']['public_search_plan']=plan
         return result
 
@@ -184,6 +206,11 @@ class FullSession:
                     self.last_lane=lane
                     self.last_task={'lane':lane,'kind':row.get('task_kind') or ('general' if lane=='general' else row['action']),
                         'question':question[:500],'listing_keys':list(self.selected)}
+                    if row.get('catalog_count_subject'):
+                        self.last_task['catalog_count_subject']=row['catalog_count_subject']
+                        self.last_task['catalog_count_domain']=row.get('catalog_count_domain')
+                    if row.get('search_context'):
+                        self.last_task['search_context']=row['search_context']
                     self.recent_tasks=(self.recent_tasks+[self.last_task])[-6:]
             row.update(total_seconds=time.perf_counter()-started,current_listing_keys_after=list(self.selected),model_load_count=self.app.reader.load_count)
             if self.app.audit:append_result(self.out,row)
@@ -224,9 +251,34 @@ class FullSession:
         active_catalog=latest_lane=='catalog'
         has_price=price_request(text,bool(ids or request.get('skus') or self.selected or self.candidates))
         price_fields=fields_alongside_price(text) if has_price else ()
+        has_stock=not self.app.legacy_evidence and bool(STOCK_WORDS.search(text))
+        stock_fields=fields_alongside_stock(text) if has_stock else ()
         if has_price and not price_fields:
             row.update(conversation_lane='product',task_kind='price')
             return finish('requires_tool',PRICE_UNAVAILABLE,'no_verified_purchase_prices')
+        if not self.app.legacy_evidence:
+            if has_stock and not stock_fields:
+                row.update(conversation_lane='product',task_kind='stock')
+                return finish('requires_tool',STOCK_UNAVAILABLE,'no_verified_live_stock')
+            requested_count = count_request(text) if not ids and not request.get('skus') else None
+            if requested_count is not None and self.answer_count(row, requested_count, request):
+                return
+        if active_catalog and previous.get('catalog_count_subject') and re.fullmatch(
+            r'(?:请|帮我|那)*(?:列出|展示|看看|看一下|给我看看)(?:这些|这类|这个类目的)?(?:商品|产品|几款|一些)?[。？！?!\s]*',text
+        ):
+            text = '搜索 '+previous['catalog_count_subject']
+            if previous.get('catalog_count_domain') and not request.get('domain'):
+                request = {**request, 'domain':previous['catalog_count_domain']}
+        prior_search = previous.get('search_context') if latest_lane=='product' else None
+        refinement = refine_constraints(text) if prior_search and not ids and not request.get('skus') else None
+        if refinement:
+            old_criteria = dict(prior_search['criteria'])
+            for key in ('color', 'material'):
+                if key in refinement:
+                    old_criteria.pop('exclude_'+key,None)
+            refinement = {**old_criteria, **refinement}
+            text = prior_search['query']
+            request = {**prior_search['filters'], **request}
         category_search=category_search_request(text,self.app.retriever.manifest) or bare_category_choice(text,self.last_task,self.app.retriever.manifest)
         active_product=bool(self.selected and latest_lane=='product'
                             and previous.get('kind') not in {'search_results','price','requires_tool','compound_fields'})
@@ -261,6 +313,13 @@ class FullSession:
         ordered_task=None
         ordered_question=None
         order_match=[ordinal_index(m[1]) for m in ORDINAL.finditer(text)] if axis and not ids else []
+        if axis and not ids and re.search(r'前(?:两|二|2)(?:款|个|件)|前面(?:两|二|2)(?:款|个|件)',text):
+            order_match=[0,1]
+        if not axis and re.search(r'比较|对比|区别|哪(?:一)?款更好',text) and (
+            len(ids)>=2 or len(self.selected)>=2 or (previous.get('search_context') and
+             re.search(r'前(?:面)?(?:两|二|2)(?:款|个|件)|这两款|第.+第',text))
+        ):
+            return finish('clarify','你更在意哪项差异？可以比较有来源的品牌、材质、重量或尺寸。','comparison_axis_unclear')
         if len(order_match)==2:
             if latest_lane!='product' or len(set(order_match))!=2 or not all(0<=index<len(self.candidates) for index in order_match):
                 return finish('clarify','请指定两个不同的有效候选，或给出对应的商品编号。','invalid_comparison_candidates')
@@ -283,6 +342,7 @@ class FullSession:
                               or ('resolved_text' in mentioned and requested_fields(mentioned['resolved_text']))):
                 return finish('clarify','当前没有候选列表。请先搜索商品，再用序号选择。','missing_candidate_list')
         from full_conversation import clear_route,direct_business_request
+        variant = variant_request(ordered_question or text) if not self.app.legacy_evidence else None
         certain=clear_route(text,bool(self.selected or supplied),previous_lane or self.last_lane,has_product_id=question_has_ids)
         if not self.app.legacy_evidence and self.app.stage=='B' and (not certain or certain['intent']!='general'):
             policy_started=time.perf_counter()
@@ -299,11 +359,17 @@ class FullSession:
             certain={'intent':'search','reason':'explicit_named_category_search'}
         # Apply the business boundary to resolved references as well as model routes.
         decision=boundary(text)
-        if decision and not price_fields and direct_business_request(text) and (certain is None or certain['intent']!='general'):
+        if decision and not (price_fields or stock_fields) and direct_business_request(text) and (certain is None or certain['intent']!='general'):
             row.update(decision,routing={'reason':'business_or_current_policy_boundary'},conversation_lane='product');return
         resolved=ordered_task or product_task(text,self.selected_entities,previous,has_explicit_id=question_has_ids)
-        if axis or price_fields:
+        if refinement:
+            route={'intent':'search','reason':'source_criteria_refinement'}
+        elif axis or price_fields or stock_fields:
             route={'intent':'fact','reason':'validated_field_request'}
+        elif variant is not None and not SEARCH_REQUEST.match(text) and not (category_search and not mentions_product and not ids):
+            if not (ids or active_product or ordered_task or mentions_product):
+                return finish('clarify','你想查哪款商品的尺码或颜色？请先选择商品，或说出要找的商品名称和规格。','variant_target_unclear')
+            route={'intent':'fact','reason':'verified_product_variant_request'}
         elif detail_display and not (resolved and resolved['intent']=='clarify'):
             route={'intent':'fact','reason':'continue_latest_product_task'}
             row['detail_display']=detail_display
@@ -353,12 +419,15 @@ class FullSession:
         row['conversation_lane']='product'
         if ids:
             decision=boundary(text)
-            if decision and not price_fields:row.update(decision,routing={'reason':'business_or_current_policy_boundary'});return
+            if decision and not (price_fields or stock_fields):row.update(decision,routing={'reason':'business_or_current_policy_boundary'});return
         if not ids and search_intent:
             if re.search(r'这款|它的|这件|这把',text) and not search_intent:return finish('clarify','请先搜索并选择商品，或提供明确编号。','missing_product_context')
             query=text
             filters={k:request[k] for k in ('domain','product_type') if request.get(k)}
-            result=self.app.search_catalog(query,self.app.mode,6 if self.app.visual else 5,filters,row['model_calls'])
+            result=self.app.search_catalog(query,self.app.mode,6 if self.app.visual else 5,filters,row['model_calls'],
+                                           refinement=refinement)
+            if result['trace'].get('search_clarification'):
+                return finish('clarify','请告诉我想找的商品，以及颜色或尺码是任选一种，还是需要同时满足的条件。','unclear_search_criteria')
             if self.app.visual:
                 # Candidate-conditional only; it cannot recover products missed globally.
                 from full_visual import rerank
@@ -369,9 +438,13 @@ class FullSession:
             self.selected_entities=[]
             self.last_product_query=None
             row.update(retrieval_seconds=result['seconds'],retrieval_trace=result['trace'],catalog_items=[public_item(r) for r in result['items']])
+            row['search_context']={'query':query,'criteria':result['trace']['public_search_plan']['criteria'],'filters':filters}
             self.candidates=[r['listing_key'] for r in result['items']]
             self.candidate_entities=[public_item(r) for r in result['items']]
-            if not result['items']:return finish('not_found','没有检索到匹配资料，可以换商品名称、品牌或类目。','empty_global_search')
+            if not result['items']:
+                if result['trace'].get('required_source_criteria'):
+                    return finish('not_found','历史目录中暂未检索到同时满足这些条件的商品记录。可以指定一项希望放宽的条件。','empty_constrained_search')
+                return finish('not_found','没有检索到匹配资料，可以换商品名称、品牌或类目。','empty_global_search')
             lines=['从全部147702条历史商品元数据中检索到以下候选，请选择后再查具体事实：']
             lines += [f'{i}. {r["listing_key"]} | {r["product_type"]} | {r["title"]}' for i,r in enumerate(result['items'],1)]
             return finish('search_results','\n'.join(lines),'global_retrieval_select_before_fact')
@@ -403,6 +476,18 @@ class FullSession:
             if not self.app.legacy_evidence and request.get('product_type') and any(
                     p['product_type']!=request['product_type'] for p in products):
                 return finish('clarify','指定类目与商品来源不一致，请核对商品编号或类目。','product_type_conflict')
+        if variant is not None and route['reason']=='verified_product_variant_request':
+            if len(products)!=1:
+                return finish('clarify','你想先核对哪一款的尺码或颜色？请明确商品或候选序号。','ambiguous_product_variant')
+            stamp=time.perf_counter()
+            result, candidates=answer_variant(products[0],variant,self.app.retriever)
+            row.update(result,retrieval_seconds=time.perf_counter()-stamp)
+            if candidates:
+                self.candidates=[item['listing_key'] for item in candidates]
+                self.candidate_entities=[public_item(item) for item in candidates]
+                row['catalog_items']=list(self.candidate_entities)
+            row['routing']['strategy']='verified_variant_source'
+            return
         if axis:
             if len(products)!=2:
                 return finish('clarify','请告诉我另外一款的商品编号，或从候选中指定两款来比较。','missing_comparison_product')
@@ -428,7 +513,7 @@ class FullSession:
             previous=self.last_product_query
             if previous['listing_keys']==self.selected:query=previous['question']+'\n本轮追问：'+text
         self.last_product_query={'question':query,'listing_keys':list(self.selected)}
-        fields=(price_fields or requested_fields(query)) if not self.app.legacy_evidence else ()
+        fields=(price_fields or stock_fields or requested_fields(query)) if not self.app.legacy_evidence else ()
         if fields and len(products)==1 and re.search(r'这(?:两款|两个|两件)',query):
             return finish('clarify','当前只确认了一件商品，请告诉我另一件的编号。','missing_second_product')
         if fields:
@@ -437,8 +522,8 @@ class FullSession:
             row['retrieval_seconds']=time.perf_counter()-stamp
             row['routing']['strategy']='source_fields'
             row['retrieval_trace']['selected_listing_keys']=list(self.selected)
-            if price_fields:
-                row['answer']+='\n'+PRICE_UNAVAILABLE
+            if price_fields or stock_fields:
+                row['answer']+='\n'+(PRICE_UNAVAILABLE if price_fields else STOCK_UNAVAILABLE)
                 row['action']='partial' if row['claims'] else 'requires_tool'
             return
         if not self.app.model_available:
@@ -588,6 +673,57 @@ class FullSession:
                    citations=[page['page_id'] for page in pages], retrieval_seconds=time.perf_counter()-started,
                    routing={'strategy':'multi','reason':'separate_verified_field_lookups'},
                    retrieval_trace={'steps':steps,'max_lookups':3}, task_kind='compound_fields')
+
+    def answer_count(self,row,requested,request):
+        subject, domain, total_categories = requested
+        manifest = self.app.retriever.manifest
+
+        def clarify(answer, reason):
+            row.update(action='clarify', answer=answer, routing={'reason':reason})
+            return True
+
+        if domain and request.get('domain') and domain != request['domain']:
+            return clarify('问题中的站点与指定站点不一致，请确认要统计哪个站点。','conflicting_catalog_count_market')
+        domain = domain or request.get('domain')
+        if domain and domain not in manifest['domains']:
+            return clarify('这个站点不在当前 ABO 目录里，请核对站点名称。','unknown_catalog_count_market')
+        filters={key: value for key,value in (('domain',domain),('product_type',request.get('product_type'))) if value}
+        criteria={}
+        if subject:
+            try:
+                plan=normalize_search(subject,manifest,filters,constrained=True)
+            except ValueError:
+                return clarify('问题中的品类与指定品类不一致，请确认要统计哪一类。','conflicting_catalog_count_category')
+            if not plan['inferred_product_types']:
+                if domain or re.search(r'类目|品类|商品|产品|类$',subject):
+                    return clarify('我还不能把这段名称对应到明确的 ABO 类目。你可以换成常见类目名称，或让我先列出目录。',
+                                   'unknown_catalog_count_category')
+                return False
+            if plan['query'] != plan['category_query']:
+                return clarify('这个统计还包含未核实的条件。请明确类目，或指定可核对的颜色、材质或尺码。',
+                               'uncertain_catalog_count_filter')
+            criteria, filters = plan['criteria'], plan['filters']
+        stamp=time.perf_counter()
+        total=self.app.retriever.count(filters,criteria,distinct_categories=total_categories)
+        scope=f'{domain} 站点的 ABO 历史目录' if domain else 'ABO 历史目录'
+        if total_categories:
+            statement=f'{scope}共收录 {total:,} 个原始类目。'
+        elif subject:
+            statement=f'{scope}中，「{subject}」共有 {total:,} 条可以核实的商品记录。'
+        else:
+            statement=f'{scope}共收录 {total:,} 条商品记录。'
+        if subject and total:
+            statement+=' 可以说「列出这些商品」查看候选。'
+        citation='abo:catalog:count'
+        row.update(action='catalog_count',answer=statement,conversation_lane='catalog',task_kind='catalog_count',
+                   catalog_count_subject=subject if total else '',catalog_count_domain=domain,
+                   citations=[citation],retrieved_pages=[{'page_id':citation,'doc_id':'abo_catalog','page':None,'rank':1,
+                     'score':1.0,'text_source':'original_catalog_count','source':{'database_sha256':manifest['database_sha256']}}],
+                   answer_source='original_catalog_count',routing={'reason':'verified_catalog_count'},
+                   retrieval_seconds=time.perf_counter()-stamp,
+                   retrieval_trace={'count':total,'filters':filters,'required_source_criteria':criteria,
+                                    'count_unit':'categories' if total_categories else 'listings'})
+        return True
 
     def show_catalog(self,row,more=False):
         start=self.catalog_offset if more else 0

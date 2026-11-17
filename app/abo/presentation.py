@@ -55,7 +55,9 @@ def readable_sources(row):
     pages={page["page_id"]:page for page in row.get("retrieved_pages",[]) if page.get("page_id")}
     for citation in row.get("citations",[]):
         match=KEY.search(citation)
-        if match:
+        if citation == 'abo:catalog:count':
+            label='ABO 目录统计'
+        elif match:
             label=match.group().split("@",1)[1].rstrip(".")+" 商品资料"
         elif "policy" in citation or row.get("conversation_lane")=="policy":
             label="售后政策快照"
@@ -74,6 +76,12 @@ def list_products(row, names, show_ids):
     types={item.get("product_type") for item in items}
     category=CATEGORY_LABELS.get(next(iter(types))) if len(types)==1 else None
     first=f"我找到了几款{category}。" if category else "我找到了这些商品。"
+    criteria=row.get('retrieval_trace',{}).get('required_source_criteria',{})
+    if criteria:
+        requested=[label for key,label in (('color','颜色'),('exclude_color','颜色排除'),('material','材质'),
+                   ('exclude_material','材质排除'),('style','款式'),('size','尺码')) if key in criteria]
+        if requested:
+            first=f"我找到了符合{'、'.join(requested)}条件的商品记录。"
     title=first+"回复「第一款」「第二款」这样的序号，就可以继续查那款的资料。"
     if row["decision"]=="found":
         title=row["answer"]

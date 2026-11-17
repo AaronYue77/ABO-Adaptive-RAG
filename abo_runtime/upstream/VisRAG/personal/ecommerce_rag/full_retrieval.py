@@ -9,6 +9,7 @@ from full_catalog import ROOT,connect,terms
 from common import WORKSPACE,file_hash,write_json
 from retrieval import rrf
 from full_encoder import Encoder as DenseEncoder,MODEL_REVISION as EMBED_REVISION,VECTOR_FILE,MANIFEST_FILE
+from catalog_constraints import matches_criteria
 
 MODES=('bm25','dense','hybrid','rerank')
 STOP=set('the a an is are this that it its of for with and or to find product described as please show me what which does have does how much color brand material model'.split())
@@ -54,6 +55,7 @@ class CrossEncoder:
 class FullRetriever:
     def __init__(self):
         self.db=connect();self.encoder=None;self.vectors=None;self.reranker=None
+        self.db.create_function('matches_criteria',4,matches_criteria,deterministic=True)
         self.manifest=json.loads((ROOT/'manifest.json').read_text('utf-8'))
         if self.manifest['records']!=147702:raise ValueError('Incomplete catalog')
         self.query_cache=ROOT/'query-vectors-e5';self.query_cache.mkdir(exist_ok=True)
@@ -92,13 +94,9 @@ class FullRetriever:
         np.save(path,vector,allow_pickle=False);write_json(meta,{'query':query,'revision':EMBED_REVISION,'sha256':file_hash(path)})
         return vector[0],False
 
-    def search(self,query,mode='bm25',top_k=5,filters=None,expand_query=False):
-        if mode not in MODES:raise ValueError('Unknown retrieval mode')
-        if not isinstance(query,str) or not 0<len(query.strip())<=2000:raise ValueError('Query must contain 1..2000 characters')
-        if not 1<=top_k<=50:raise ValueError('top_k must be 1..50')
+    def filter_clause(self, filters, criteria=None):
         filters=filters or {}
         if set(filters)-{'product_type','product_types','domain'}:raise ValueError('Only product_type/product_types/domain filters allowed')
-        started=time.perf_counter();effective=expand(query) if expand_query else query
         conditions=[];args=[]
         for k,v in filters.items():
             if k=='product_types':
@@ -107,9 +105,25 @@ class FullRetriever:
                 conditions.append('p.product_type IN ('+','.join('?' for _ in v)+')');args.extend(v);continue
             if not isinstance(v,str):raise ValueError('Filter values must be strings')
             conditions.append('p.'+k+'=?');args.append(v)
-        where=' AND '.join(conditions) or '1=1'
+        if criteria:
+            conditions.append('matches_criteria(p.title,p.product_type,p.raw_json,?)')
+            args.append(json.dumps(criteria,ensure_ascii=False))
+        return ' AND '.join(conditions) or '1=1', args
+
+    def count(self, filters, criteria=None, *, distinct_categories=False):
+        where, args = self.filter_clause(filters, criteria)
+        column = 'DISTINCT p.product_type' if distinct_categories else '*'
+        return self.db.execute(f'SELECT count({column}) FROM products p WHERE '+where,args).fetchone()[0]
+
+    def search(self,query,mode='bm25',top_k=5,filters=None,expand_query=False,*,criteria=None):
+        if mode not in MODES:raise ValueError('Unknown retrieval mode')
+        if not isinstance(query,str) or not 0<len(query.strip())<=2000:raise ValueError('Query must contain 1..2000 characters')
+        if not 1<=top_k<=50:raise ValueError('top_k must be 1..50')
+        started=time.perf_counter();effective=expand(query) if expand_query else query
+        where,args=self.filter_clause(filters,criteria)
         trace={'mode':mode,'global_index_records':147702,'query':query,'effective_query':effective,'filters':filters,
                'dense_revision':EMBED_REVISION if mode!='bm25' else None,'rrf_c':60,'candidate_budget':20}
+        if criteria:trace['required_source_criteria']=criteria
         tokens=list(dict.fromkeys(t for t in terms(effective).split() if t not in STOP))[:64]
         if not tokens:return {'items':[],'seconds':time.perf_counter()-started,'trace':trace}
         match=' OR '.join('"'+t.replace('"','""')+'"' for t in tokens)
@@ -126,7 +140,7 @@ class FullRetriever:
                 if manifest['rows']!=147702 or manifest['source_database_sha256']!=self.manifest['database_sha256']:raise ValueError('Stale/incomplete semantic index')
                 self.vectors=np.load(VECTOR_FILE,mmap_mode='r',allow_pickle=False)
             vector,cached=self.dense_query(effective)
-            if conditions:
+            if filters or criteria:
                 indices=np.array([r[0]-1 for r in self.db.execute('SELECT p.id FROM products p WHERE '+where,args)],dtype='int64')
             else:indices=np.arange(len(self.vectors))
             if len(indices):
