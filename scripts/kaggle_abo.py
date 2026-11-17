@@ -23,6 +23,14 @@ def mounted_script(name):
     return destination
 
 
+def configure_graph_runtime():
+    from langchain_core.globals import set_debug, set_verbose
+
+    # Core 0.3 still checks the root LangChain flags when Kaggle preinstalls it.
+    set_debug(False)
+    set_verbose(False)
+
+
 def start():
     project = runpy.run_path(str(mounted_script("kaggle_8b_project.py")))
     project["setup"]()
@@ -35,6 +43,7 @@ def start():
     project["setup_catalog"]()
     os.chdir(workspace)
     sys.path.insert(0,str(workspace))
+    configure_graph_runtime()
     from app.abo.service import AboDialogue
 
     output = workspace/"reports/ecommerce_rag"/("abo-adaptive-kaggle-"+uuid4().hex[:10])
