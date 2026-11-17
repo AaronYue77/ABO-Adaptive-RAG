@@ -58,7 +58,7 @@ def create_abo_app():
 
     def require_catalog():
         if not catalog_ready(catalog):
-            raise HTTPException(503, '请运行 python scripts/start_web.py 初始化本地商品目录。')
+            raise HTTPException(503, '请运行项目根目录的 start-web.cmd 初始化本地商品目录。')
 
     @asynccontextmanager
     async def lifespan(_app):

@@ -454,7 +454,10 @@ async function initialize() {
   try {
     const health = await request('/health');
     ready = health.status === 'ready';
-    if (!ready) throw new Error('请先运行 scripts/start_web.py 准备商品目录。');
+    if (!ready) {
+      showStatus('browse-status', '请先运行项目根目录的 start-web.cmd 准备商品目录。');
+      return;
+    }
     const counts = health.catalog;
     for (const [id, key] of [['record-count', 'records'], ['category-count', 'categories'], ['market-count', 'marketplaces']]) {
       byId(id).textContent = number.format(counts[key]);

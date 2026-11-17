@@ -12,19 +12,23 @@
 
 ## 打开网页问答台
 
-从 GitHub 下载 ZIP 并解压，或克隆本仓库。在项目根目录打开终端，使用 Python 3.11 或更新版本。首次启动时需要网络和至少 2 GB 空闲磁盘。Windows 可以运行：
+从 GitHub 下载 ZIP 并解压，或克隆本仓库。项目根目录里的 **`start-web.cmd` 是网页的统一启动文件**。首次启动需要网络和至少 2 GB 空闲磁盘。 [下载项目 ZIP](https://github.com/AaronYue77/ABO-Adaptive-RAG/archive/refs/heads/main.zip)
+
+**Windows** 双击 `start-web.cmd` 就能启动。在已打开的项目 PowerShell 窗口里，运行同一个文件也可以：
 
 ```powershell
-py -3 scripts/start_web.py
+.\start-web.cmd
 ```
 
-macOS 和 Linux 可以运行：
+**macOS 和 Linux** 在项目根目录用系统终端运行同一个文件：
 
 ```sh
-python3 scripts/start_web.py
+sh ./start-web.cmd
 ```
 
-如果 Windows 使用 `python` 启动已安装的 Python，将 `py -3` 换成 `python`。Linux 的系统 Python 如果缺少 `venv` 模块，请通过发行版安装对应的 Python venv 软件包。启动器会建立独立环境、下载并校验公开的 ABO 文件、构建全量索引，然后打开 [本机问答台](http://127.0.0.1:8769/)。再次启动会复用目录。终端保持运行即可使用网页，停止服务可按 `Ctrl+C`。端口被占用时可加 `--port 8770`。
+启动器会选用可用的 Python 3.11 或其他受支持的更新版本，缺少时自动下载并校验一份便携 Python，放在项目目录内。它随后建立独立环境、下载公开的 ABO 数据、构建全量索引并打开浏览器。再次启动会复用已准备的环境与索引。支持笔记本和台式机上的 64 位 Windows、macOS，以及使用 glibc 的 64 位 Linux。Windows 11 ARM 使用系统的 x64 应用兼容模式。Linux 的便携下载需要 `curl` 或 `wget`。 [便携 Python 来源](https://github.com/astral-sh/python-build-standalone/releases/tag/20261110)
+
+使用时保持启动窗口运行。浏览器未自动打开时，点击 [本机问答台](http://127.0.0.1:8769/)。按 `Ctrl+C` 停止服务。端口被占用时，给同一个启动命令加上 `--port 8770`。
 
 新对话先显示 576 个类目。点类目分页浏览全量商品，再点商品卡核对原始属性、站点和来源行。发送问题即切换到对话，搜索、兼容候选和有取证的外观相关回复可附商品图片。计数、一般规格追问、售后和未接实时业务查询用文字回答。目录使用 ABO 原图及其缩略图。全库目前有 575 个类目能找到官方封面，发箍与发带在原始记录中没有附图，其商品仍可查看。 [图片署名与数据来源](docs/网页商品图片.md)
 
@@ -78,7 +82,7 @@ flowchart LR
 
 `chat` 用本机索引查目录、源字段和文本兼容证据。`-Gpu` 从 `abo_runtime/models/Qwen3-VL-8B-Instruct` 读取官方底座，在本机 GPU 用 NF4 运行。`-Visual` 使用 `abo_runtime/models/VisRAG-Ret` 给至多六个文字候选的商品图重排。公共原图若未缓存，则按需下载。模型安装、资产恢复和显存说明见 [本地模型与启动](docs/本地模型与启动.md)。
 
-HTTP 可用 `-Command serve` 启动，接口说明在 `http://127.0.0.1:8769/docs`。请求 `POST /api/v1/chat` 时传入 `question`，再用返回的 `session_id` 续聊。网页来回切换和浏览无需额外前端服务。
+网页启动后，接口说明在 `http://127.0.0.1:8769/docs`。请求 `POST /api/v1/chat` 时传入 `question`，再用返回的 `session_id` 续聊。
 
 运行 `-Command logs` 可查看操作、问题与逐题汇总的位置。每次会话保存可见对话、逐题证据和运行事件。远程 PowerShell 会话也保存已收到的结果和连接异常。[日志内容与排查方法](docs/日志与排查.md)
 

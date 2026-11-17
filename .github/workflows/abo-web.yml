@@ -15,16 +15,34 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
+        os: [windows-latest, windows-11-arm, ubuntu-latest, macos-latest]
     env:
       PYTHONUTF8: '1'
       PYTHONIOENCODING: utf-8
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Download public ABO sources and build the full catalogue
-        run: python scripts/start_web.py --prepare-only --no-browser
-      - name: Check the catalogue, conversation and image rules
-        run: python scripts/smoke_web.py
+      - name: Run the public Windows launcher with Python absent from PATH
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $env:PATH = "$env:SystemRoot\System32"
+          if (Get-Command py.exe, python.exe, python3.exe -ErrorAction SilentlyContinue) {
+            throw 'A system Python is visible to the test.'
+          }
+          .\start-web.cmd --prepare-only --no-browser
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Get-ChildItem .cache/abo-web-python -Recurse -Filter .ready -Force)) {
+            throw 'The launcher did not install its portable Python.'
+          }
+          .\.venv-web\Scripts\python.exe scripts/smoke_web.py
+      - name: Run the public Unix launcher with Python absent from PATH
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          tools=$(mktemp -d)
+          for name in sh dirname sed uname awk mkdir curl wget sha256sum shasum mv rm tar gzip; do
+            if path=$(command -v "$name"); then ln -s "$path" "$tools/$name"; fi
+          done
+          PATH="$tools" sh ./start-web.cmd --prepare-only --no-browser
+          for ready in .cache/abo-web-python/*/.ready; do test -f "$ready"; done
+          .venv-web/bin/python scripts/smoke_web.py
