@@ -40,6 +40,8 @@ flowchart LR
 .\scripts\run_abo.ps1 -Command cloud-chat
 ```
 
+[Kaggle 调用、QLoRA 训练与导出](docs/Kaggle调用与LoRA导出.md) · [下载正式 LoRA 适配器](https://github.com/AaronYue77/ABO-Adaptive-RAG/releases/tag/qwen3-vl-8b-abo-lora-v1)
+
 ## 本地开发
 
 已配置的本地工作区可直接打开 PowerShell 运行。
