@@ -1,0 +1,56 @@
+"""Start the new Adaptive-rag ABO profile and run the release gates on Kaggle."""
+
+import json
+from hashlib import file_digest
+from pathlib import Path
+import os
+import runpy
+import sys
+from uuid import uuid4
+from zipfile import ZipFile
+
+
+def mounted_script(name):
+    inputs = Path("/kaggle/input")
+    markers = list(inputs.rglob("ABO_8B_FORMAL.txt",recurse_symlinks=True))
+    if markers:
+        marker, = markers
+        return marker.parent / "scripts" / name
+    bundle, = inputs.rglob("abo-8b-formal.zip",recurse_symlinks=True)
+    destination = Path("/kaggle/working") / name
+    with ZipFile(bundle) as archive:
+        destination.write_bytes(archive.read("scripts/"+name))
+    return destination
+
+
+def start():
+    project = runpy.run_path(str(mounted_script("kaggle_8b_project.py")))
+    project["setup"]()
+    workspace = project["ROOT"]
+    manifest = json.loads((workspace/"adaptive-release-manifest.json").read_text("utf-8"))
+    for relative, digest in manifest.items():
+        with (workspace/relative).open("rb") as stream:
+            assert file_digest(stream,"sha256").hexdigest()==digest, relative
+    print(f"Verified {len(manifest)} release files.",flush=True)
+    project["setup_catalog"]()
+    os.chdir(workspace)
+    sys.path.insert(0,str(workspace))
+    from app.abo.service import AboDialogue
+
+    output = workspace/"reports/ecommerce_rag"/("abo-adaptive-kaggle-"+uuid4().hex[:10])
+    output.mkdir(parents=True)
+    return AboDialogue(output,gpu=True)
+
+
+def verify(session):
+    from app.abo.validation import run_category_validation, run_validation
+    from common import WORKSPACE
+
+    smoke = runpy.run_path(str(WORKSPACE/"scripts/kaggle_stage_d_chat.py"))
+    smoke["verify"](session)
+    smoke["verify_categories"](session)
+    result = run_validation(session,session.output/"cross-category.json",require=True)
+    print(f"Cross-category regression {result['passed']}/{result['cases']}.",flush=True)
+    category = run_category_validation(session,session.output/"all-category-followups.json")
+    print(f"Product follow-up across source categories: {category['passed']}/{category['categories']}.",flush=True)
+    return result

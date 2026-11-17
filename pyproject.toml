@@ -1,7 +1,7 @@
 [project]
-name = "adaptive-rag-cs"
+name = "abo-adaptive-rag"
 version = "0.1.0"
-description = "Adaptive-RAG multi-agent e-commerce customer service"
+description = "ABO product evidence and read-only accessory compatibility on Adaptive-rag"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -47,6 +47,7 @@ docs = [
 
 [project.scripts]
 adaptive-rag-cli = "app.cli:main"
+abo-adaptive-rag = "app.abo.__main__:main"
 
 [build-system]
 requires = ["setuptools>=75"]
