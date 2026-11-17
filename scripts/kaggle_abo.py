@@ -53,7 +53,8 @@ def setup_catalog(workspace=ROOT):
     snapshot = workspace/"offline/abo-source-for-kaggle.zip"
     if snapshot.is_file():
         with ZipFile(snapshot) as archive:
-            archive.extractall(workspace)
+            archive.extractall(workspace, members=[name for name in archive.namelist()
+                                                   if name.startswith(("data/", "fonts/"))])
     expected = {
         "archives/abo-listings.tar": "b7f7ceacb328fa5ab6e143b88e1f948443a877cfc95b67ff09c8ebabd50644e3",
         "images/metadata/images.csv.gz": "915263ef354d7a5d3503e899e610082f510c0011cccd5b4dc4f4c5efa86ef539",
