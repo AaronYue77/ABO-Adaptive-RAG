@@ -65,14 +65,20 @@ unknown不是支持，not_requested不是无年龄限制。缺失属性不能变
 adult_age_is_context=true时，允许依据已核实规格给成年人有条件建议，仍不能保证适龄或健康安全。
 核对标签含义是否被扩大成绝对承诺，例如Decaf不等于经检测为零咖啡因、water resistant不等于可浸水。
 检查部件与整件的属性范围，黄色手柄不证明杯身黄色。没有颜色字段不能描述为无色或透明。candidate_number为固定商品卡序号，不能按引用子集改变身份。
+逐个商品核对用途，Match与Training不能统称训练款。Without Hand Pump仅表示不附带打气筒，不证明开箱即用或不需充气。
+不能因为回答引用了正确商品，就认为其余断言也正确。对每一个颜色、部位和用途分别核对源句；列出需纠正的具体断言。
 检查重量与承重、净重与包装重量、内外尺寸等字段是否混淆，是否缺失单位后自行猜测。
 历史回答和用户愿望不能证明商品事实。已核实的count结果可以直接引用。problems用中文简要列出需纠正的事实。"""
 
 
 def validate_display_claims(answer, facts):
     """Do not derive source properties from the user's requested properties."""
-    if re.search(r"第[一二三四五六七八九十\d]+(?:款|件|台|双)", answer):
-        raise ValueError("Use product names in prose; candidate numbers belong to the fixed cards")
+    positions = {fact.get("candidate_number") for fact in facts}
+    for match in re.finditer(r"第([一二三四五六七八九十]|\d+)(?:款|件|台|双)", answer):
+        value = match.group(1)
+        number = int(value) if value.isdigit() else "一二三四五六七八九十".index(value) + 1
+        if number not in positions:
+            raise ValueError("Answer refers to a product outside the fixed candidate positions")
     evidence = json.dumps(
         [{"title": fact["title"], "fields": fact["fields"]} for fact in facts], ensure_ascii=False
     )
@@ -974,7 +980,7 @@ class AdaptiveTurn:
                                 "content": json.dumps(model_context, ensure_ascii=False),
                             },
                         ],
-                        "adaptive_grounded_answer",
+                        "adaptive_source_answer",
                         calls,
                         550,
                     )
@@ -995,7 +1001,13 @@ class AdaptiveTurn:
                 raise ValueError("Recommendation lacks requested age evidence")
             if facts and not cited:
                 raise ValueError("Product answer omitted evidence")
-            validate_display_claims(answer, facts)
+            # A valid user ordinal is allowed; unsupported references enter the repair
+            # path rather than discarding an otherwise answerable product question.
+            display_problem = None
+            try:
+                validate_display_claims(answer, facts)
+            except ValueError as error:
+                display_problem = str(error)
             if re.search(r"无年龄限制|没有年龄限制|全年龄|任何年龄|安全无害", answer) and not any(
                 re.search(r"all ages|no age restriction", json.dumps(source["fields"]), re.I)
                 for source in facts
@@ -1029,6 +1041,9 @@ class AdaptiveTurn:
                     )
                 )
             )
+            if display_problem:
+                review["supported"] = False
+                review["problems"] = [*review.get("problems", []), display_problem]
             if review.get("supported") is not True:
                 repair_prompt = (
                     answer_prompt
@@ -1044,7 +1059,7 @@ class AdaptiveTurn:
                                 "content": json.dumps(model_context, ensure_ascii=False),
                             },
                         ],
-                        "adaptive_grounded_repair",
+                        "adaptive_source_repair",
                         calls,
                         450,
                     )
@@ -1134,20 +1149,7 @@ class AdaptiveTurn:
         from app.abo.presentation import readable_text
 
         display_order = [source["listing_key"] for source in facts[:5]]
-        ordinals = ["第一款", "第二款", "第三款", "第四款", "第五款"]
-        labels = {
-            source["id"]: (
-                (
-                    f"第{source['candidate_number']}款"
-                    if source.get("candidate_number")
-                    else ordinals[display_order.index(source["listing_key"])]
-                )
-                if source["listing_key"] in display_order
-                and display_order.index(source["listing_key"]) < 5
-                else readable_text(source["title"])
-            )
-            for source in facts
-        }
+        labels = {source["id"]: readable_text(source["title"]) for source in facts}
         answer = re.sub(
             r"(?<![A-Za-z0-9])E\d+(?![A-Za-z0-9])",
             lambda match: labels.get(match.group(), ""),

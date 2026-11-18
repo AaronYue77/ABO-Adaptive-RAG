@@ -170,6 +170,15 @@ class WebChangesTests(unittest.TestCase):
         validate_display_claims("资料没有说明颜色，不能确认透明。", facts)
         validate_display_claims("这款是透明杯", [{"title": "Clear mug", "fields": {}}])
 
+    def test_valid_selected_ordinal_is_allowed_but_new_number_is_repaired(self):
+        from app.abo.turns import validate_display_claims
+
+        facts = [{"title": "product", "fields": {}, "candidate_number": 3}]
+        validate_display_claims("第三款的属性仍需核实。", facts)
+        validate_display_claims("第3款的属性仍需核实。", facts)
+        with self.assertRaises(ValueError):
+            validate_display_claims("第一款是红色的。", facts)
+
     def test_released_filter_triggers_search_even_when_planner_only_says_advice(self):
         from app.abo.turns import complete_plan
 
@@ -202,8 +211,18 @@ class WebChangesTests(unittest.TestCase):
                 chat.engine.catalog.candidate_entities = [public_item(p) for p in products]
                 chat.engine.last_lane = "product"
                 chat.app.model_available = True
+                stages = []
 
-                def generate(messages, stage, trace, max_tokens, query=query, products=products):
+                def generate(
+                    messages,
+                    stage,
+                    trace,
+                    max_tokens,
+                    query=query,
+                    products=products,
+                    stages=stages,
+                ):
+                    stages.append(stage)
                     if stage == "adaptive_turn_plan":
                         return json.dumps(
                             {
@@ -222,7 +241,9 @@ class WebChangesTests(unittest.TestCase):
                     self.assertEqual(context["fresh_sources"][0]["candidate_number"], 3)
                     return json.dumps(
                         {
-                            "answer": "E1的名称是" + products[2]["title"],
+                            "answer": "第一款的属性如下。"
+                            if stage == "adaptive_source_answer"
+                            else "E1的名称是" + products[2]["title"],
                             "citations": ["E1"],
                             "recommended": [],
                         }
@@ -240,7 +261,9 @@ class WebChangesTests(unittest.TestCase):
                     row = chat.respond("给我介绍第三款商品")
                     photo = chat.respond("看看第三款图片")
                 self.assertEqual(row["citations"], [products[2]["listing_key"] + ":metadata"])
-                self.assertIn("第3款", row["display_answer"])
+                self.assertIn(products[2]["title"], row["display_answer"])
+                self.assertIn("adaptive_source_repair", stages)
+                self.assertTrue(row["synthesis_guard"]["passed"])
                 self.assertEqual(row["candidate_positions"][products[2]["listing_key"]], 3)
                 self.assertEqual(photo["candidate_positions"][products[2]["listing_key"]], 3)
                 self.assertEqual(

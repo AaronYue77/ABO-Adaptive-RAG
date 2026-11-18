@@ -18,6 +18,9 @@ def verify(chat):
             chat, {"thread_id": identity, "request_id": uuid4().hex, "question": question}
         )
         row = response["row"]
+        for call in row.get("model_calls", []):
+            if call.get("stage") in {"adaptive_source_answer", "adaptive_source_repair"}:
+                assert call.get("adapter_mode") == "base", call
         checks.append(
             {
                 "question": question,
@@ -44,6 +47,7 @@ def verify(chat):
         )
         expected = items[2]["listing_key"]
         row = ask(basketball, "给我介绍一下第三款篮球")
+        assert row["synthesis_guard"]["passed"], row["synthesis_guard"]
         assert expected + ":metadata" in row["citations"], row["citations"]
         sources = web_sources(row, catalog)
         source = next(source for source in sources if source["citation"] == expected + ":metadata")
@@ -76,6 +80,7 @@ def verify(chat):
         cup = uuid4().hex
         ask(cup, "找几款黑色陶瓷杯")
         row = ask(cup, "陶瓷杯有什么颜色的？")
+        assert row["synthesis_guard"]["passed"], row["synthesis_guard"]
         traces = row.get("retrieval_trace", {}).get("tasks", [])
         assert traces and all(
             trace.get("required_source_criteria", {}).get("material") == "陶瓷"
