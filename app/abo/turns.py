@@ -669,6 +669,12 @@ class AdaptiveTurn:
                             "回退",
                             "候选语义排序未完成，保留通过原字段条件的检索顺序。",
                         )
+                if self.engine.app.visual:
+                    from full_visual import rerank
+
+                    pool, visual_trace = rerank(original, pool[:6], self.engine.app.reader)
+                    result["trace"]["conditional_visual"] = visual_trace
+                    search_seconds += visual_trace.get("seconds", 0)
                 sources.extend(
                     {**source, "task_needs": local_needs, "task_index": task_index}
                     for source in pool[: (4 if len(searches) == 1 else 3)]

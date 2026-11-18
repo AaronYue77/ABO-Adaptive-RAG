@@ -188,6 +188,7 @@ class ResumeTests(unittest.TestCase):
         stale = set(chat.engine.catalog.candidates)
         self.assertTrue(stale)
         chat.app.model_available = True
+
         plan = {
             "tasks": [
                 {"tool": "compatibility", "question": "B07T9TLVJ3能配 iPhone 8 Plus 吗？"},
@@ -245,6 +246,8 @@ class ResumeTests(unittest.TestCase):
         chat = AboDialogue(self.root / "compound")
         self.addCleanup(chat.close)
         chat.app.model_available = True
+        # The GPU planner must retain the optional six-candidate VisRAG path.
+        chat.app.visual = True
 
         def generate(messages, stage, trace, max_tokens, **kwargs):
             trace.append({"stage": stage, "status": "ok", "model_executed": False})
@@ -282,6 +285,13 @@ class ResumeTests(unittest.TestCase):
         with (
             patch.object(chat.app.conversation, "generate", side_effect=generate),
             patch.object(chat.app.reader, "ensure_reader", return_value=reader),
+            patch(
+                "full_visual.rerank",
+                side_effect=lambda query, items, reader: (
+                    list(reversed(items)),
+                    {"visual_candidates": len(items)},
+                ),
+            ) as visual,
         ):
             result = chat.respond("手表有多少个？再找几款电风扇")
         self.assertIn("28", result["display_answer"])
@@ -292,6 +302,8 @@ class ResumeTests(unittest.TestCase):
             all({"rank", "score", "text_source"} <= set(page) for page in result["retrieved_pages"])
         )
         self.assertIn("本轮多任务计划", (chat.output / "逐题结果.txt").read_text("utf-8"))
+        visual.assert_called_once()
+        self.assertLessEqual(len(visual.call_args.args[1]), 6)
 
 
 if __name__ == "__main__":
