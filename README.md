@@ -74,6 +74,10 @@ flowchart LR
 
 [Kaggle 调用、QLoRA 训练与导出](docs/Kaggle调用与LoRA导出.md) · [公开 Notebook 源文件](scripts/kaggle_abo_public.ipynb) · [下载正式 LoRA 适配器](https://github.com/AaronYue77/ABO-Adaptive-RAG/releases/tag/qwen3-vl-8b-abo-lora-v1)
 
+新增的[对话规划与推荐说明适配器](https://github.com/AaronYue77/ABO-Adaptive-RAG/releases/tag/qwen3-vl-8b-abo-dialogue-v1)与图文适配器分别加载，复用同一个8B底座。其专项开发结果为9/28→26/28，留出26/28，题目范围与限制见[验证说明](docs/多任务对话与恢复.md)。
+
+更新已有安装后，重新打开 `start-web.cmd`，并在新版 Notebook 中重新运行初始化单元。看到就绪提示后再复制当前会话地址连接。旧版会话会在连接时提示更新；本机历史对话和商品选择保留。
+
 ## 本地开发
 
 已配置的本地工作区可直接打开 PowerShell 运行。
