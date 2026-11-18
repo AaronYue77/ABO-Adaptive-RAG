@@ -209,6 +209,22 @@ class ResumeTests(unittest.TestCase):
         )
         self.assertNotIn("ELECTRIC_FAN", json.dumps(row.get("requirement_checks", [])))
 
+    def test_changed_requirements_trigger_new_evidence_even_if_planner_only_says_advice(self):
+        from app.abo.turns import complete_plan
+
+        for text in ("改成蓝色，其他用途保持", "排除黑色，再说明理由", "只看39码的"):
+            with self.subTest(text=text):
+                plan = {
+                    "tasks": [{"tool": "advice", "question": text}],
+                    "query": "backpack",
+                    "needs": {},
+                    "focus": [],
+                    "images": False,
+                }
+                updated = complete_plan(plan, text, True)
+                self.assertEqual(updated["tasks"][0]["tool"], "search")
+                self.assertEqual(updated["tasks"][0]["question"], text)
+
     def test_grounding_keeps_measurement_units_and_normalized_units(self):
         from full_retrieval import FullRetriever
 

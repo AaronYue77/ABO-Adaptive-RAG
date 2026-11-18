@@ -80,6 +80,8 @@ def verify(chat):
             passed &= "书" in json.dumps(chat.turn_memory, ensure_ascii=False)
         if kind == "change":
             passed &= "书" in json.dumps(chat.turn_memory.get("needs"), ensure_ascii=False)
+            passed &= any(task["tool"] == "search" for task in row["task_plan"]["tasks"])
+            passed &= bool(row.get("catalog_items"))
         if kind == "two_categories":
             passed &= (
                 len(
