@@ -89,7 +89,7 @@ class StageDChat:
                            "source_sha256":self.source_sha,"compatibility_protocol":protocol,
                            "dialogue_adapter_sha256":dialogue_adapter['adapter_sha256'] if dialogue_adapter else None,
                            "dialogue_planner":"adaptive-multiple-tools-v1" if gpu else "source-lookup",
-                           "web_dialogue_contract":"source-identity-filter-release-v4"})
+                           "web_dialogue_contract":"source-identity-filter-release-v5"})
         self.config_sha = file_hash(config)
 
     def close(self):

@@ -39,6 +39,7 @@ def verify(chat):
     try:
         basketball = uuid4().hex
         row = ask(basketball, "推荐几款篮球，给我看图片")
+        assert row["synthesis_guard"]["passed"], row["synthesis_guard"]
         items = row.get("catalog_items", [])
         assert len(items) >= 3, "Basketball search did not return three candidates"
         assert all(

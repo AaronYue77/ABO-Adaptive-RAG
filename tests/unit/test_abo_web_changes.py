@@ -242,7 +242,7 @@ class WebChangesTests(unittest.TestCase):
                     return json.dumps(
                         {
                             "answer": "第一款的属性如下。"
-                            if stage == "adaptive_source_answer"
+                            if stage == "adaptive_grounded_answer"
                             else "E1的名称是" + products[2]["title"],
                             "citations": ["E1"],
                             "recommended": [],

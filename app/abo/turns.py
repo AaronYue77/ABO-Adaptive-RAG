@@ -73,6 +73,9 @@ adult_age_is_context=true时，允许依据已核实规格给成年人有条件�
 
 def validate_display_claims(answer, facts):
     """Do not derive source properties from the user's requested properties."""
+    from app.abo.answer_evidence import validate_boundaries
+
+    validate_boundaries(answer, facts)
     positions = {fact.get("candidate_number") for fact in facts}
     for match in re.finditer(r"第([一二三四五六七八九十]|\d+)(?:款|件|台|双)", answer):
         value = match.group(1)
@@ -891,6 +894,9 @@ class AdaptiveTurn:
             for index, source in enumerate(sources, 1)
         ]
         for index, fact in enumerate(facts, 1):
+            from app.abo.answer_evidence import boundaries
+
+            fact["source_boundaries"] = boundaries(fact)
             if "search" in tools:
                 fact["candidate_number"] = index
             elif fact["listing_key"] in previous_candidates:
@@ -980,7 +986,7 @@ class AdaptiveTurn:
                                 "content": json.dumps(model_context, ensure_ascii=False),
                             },
                         ],
-                        "adaptive_source_answer",
+                        "adaptive_grounded_answer",
                         calls,
                         550,
                     )
@@ -1046,17 +1052,26 @@ class AdaptiveTurn:
                 review["problems"] = [*review.get("problems", []), display_problem]
             if review.get("supported") is not True:
                 repair_prompt = (
-                    answer_prompt
-                    + "\n纠正核验发现的问题："
-                    + json.dumps(review.get("problems", []), ensure_ascii=False)
+                    '仅修正下面草稿已指出的事实错误，输出JSON {"answer":"自然中文回答",'
+                    '"citations":["E1"],"recommended":[]}。不要扩展或引入新的用途、适龄、材质或参数。'
+                    "用商品自然名称，不重新枚举商品。严格保持source_boundaries中的部位、否定和配件含义。"
+                    "缺证据时直接说明未收录，不以无色、透明、不需要或开箱即用替代未知。"
+                    "citations只填实际使用的来源编号，recommended只能来自eligible_recommendations。"
                 )
+                repair_context = {
+                    "question": text,
+                    "draft": answer,
+                    "problems": review.get("problems", []),
+                    "fresh_sources": facts,
+                    "eligible_recommendations": eligible,
+                }
                 repaired = parse_json(
                     self.engine.app.conversation.generate(
                         [
                             {"role": "system", "content": repair_prompt},
                             {
                                 "role": "user",
-                                "content": json.dumps(model_context, ensure_ascii=False),
+                                "content": json.dumps(repair_context, ensure_ascii=False),
                             },
                         ],
                         "adaptive_source_repair",
