@@ -35,7 +35,8 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    q["当前问题与本会话选择"] --> route{"明确规则与受约束的语义分类"}
+    q["完整问题、本线程需求与商品身份"] --> plan["GPU · 8B 多任务语义规划<br/>逐项考虑可用工具，保留年龄和用途"]
+    plan --> route{"按依赖执行必要工具，可组合多路"}
     route -->|"问候、范围外、实时或交易请求"| plain["寒暄、说明范围或解释可用证据"]
     route -->|浏览目录| directory["运行目录分页，确认用户想查的类目"]
     route -->|问数量| tally["按记录、类目、站点和已核实条件统计"]
@@ -43,7 +44,9 @@ flowchart TD
     route -->|查找或调整条件| search["按真实类目、站点和源字段条件筛选"]
     directory -->|指定类目| search
     search --> rank["日常使用 SQLite BM25<br/>离线对照 E5 / RRF 及可选重排"]
-    rank --> choose["展示原始名称，确认商品并保存 ASIN@站点"]
+    rank --> semantic["8B 按完整需求筛查物体与用途<br/>保留原始字段条件和明确的排除项"]
+    semantic --> suitability["重新读候选原始记录<br/>检查年龄、用途和条件的支持、缺失与冲突"]
+    suitability --> choose["解释选择理由和待核实项<br/>展示名称并保存 ASIN@站点"]
     rank -.-> visual["本地 -Visual · VisRAG-Ret<br/>至多六个候选的原图"] --> choose
     route -->|指定商品或追问| evidence{"本轮需要的来源"}
     choose --> evidence
@@ -54,7 +57,7 @@ flowchart TD
     evidence -->|图片或页内问题| reader["按需选择原图或证据页，交给 8B Reader"]
     route -->|售后| policy["核对站点与已保存的政策快照"]
     reader --> guard["检查答案和引用，按已启用策略有限补查"]
-    fields --> answer["组织可读回答和来源，写入会话、逐题与运行日志"]
+    fields --> answer["综合多个工具的可答部分<br/>8B 证据复核与有限纠正<br/>写入会话、逐题与运行日志"]
     tally --> answer
     variants --> answer
     detail --> answer
@@ -67,6 +70,8 @@ flowchart TD
 ```
 
 目录页码、上一轮筛选条件和当前选中的商品分别维护。目录数量以历史商品记录为单位，同一 ASIN 在不同站点可分别出现。明确的颜色、材质、尺码和款式条件在排序前核对，查询现有库存时只报告可验证的历史字段。尺码保留 US、UK、EU 等原始标注，同站点的变体需核对品牌与型号。Notebook 与本地日常会话使用 BM25。本地 `-Visual` 可对文字检索候选做商品图重排。B 的冻结检索对照另有独立协议。
+
+CPU 模式沿用明确请求的确定性取证。GPU 模式在其上增加每轮多任务计划、需求记忆、推荐说明和来源复核。同一问题可同时统计、搜索、比较、说明缺失价格与展示照片。[历史续聊和断线恢复](多任务对话与恢复.md)保存各线程独立状态，不再由新对话自动发送“重置”。
 
 - [新项目会话路由](../app/abo/service.py) · [商品对话与逐件答证](../abo_runtime/upstream/VisRAG/personal/ecommerce_rag/full_app.py)
 - [检索模式](../abo_runtime/upstream/VisRAG/personal/ecommerce_rag/full_retrieval.py) · [原始字段、单位和图片证据](../abo_runtime/upstream/VisRAG/personal/ecommerce_rag/full_evidence.py) · [售后快照](../abo_runtime/upstream/VisRAG/personal/ecommerce_rag/full_policy.py)
@@ -97,6 +102,9 @@ flowchart TD
     score --> publish["归档达标的 120/50 正式版本<br/>按需加载至图文 Reader 与 D 的原图环节"]
     publish --> runtime["本地 NF4 从官方四片权重加载<br/>Kaggle 使用官方模型挂载"]
     runtime --> public["公开 Notebook 启动个人 GPU 会话<br/>从 GitHub Release 校验并加载正式 LoRA"]
+    instructions["独立补充指令<br/>复合任务、指代、适龄缺证据与推荐解释"] --> dialog["对话规划与说明 QLoRA 候选<br/>保存训练loss和按类目分离的划分"]
+    model --> dialog
+    dialog --> gate["仅按独立开发对照决定是否启用<br/>留出集另报，正式C图文适配器保持独立"]
 ```
 
 训练和选版记录沿用原冻结协议。C0、C1、C2 比较回答侧的变化，B 的检索质量使用 B 的独立协议。日常会话复用已确认好的适配器摘要。日志维护发布无需重新微调。

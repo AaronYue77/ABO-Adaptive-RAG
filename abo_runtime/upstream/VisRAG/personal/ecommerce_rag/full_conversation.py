@@ -144,7 +144,7 @@ class FullConversation:
         self.evidence_reader=evidence_reader
 
     def generate(self, messages, stage, trace, max_tokens, *, use_adapter=False):
-        from c8_reader import base_generation
+        from app.abo.dialogue_adapter import STAGES, generation_context
         import torch
         initial_load_count = self.evidence_reader.load_count
         load_started = time.perf_counter()
@@ -166,8 +166,9 @@ class FullConversation:
             entry["visual_tokens"] = sum(int(t*h*w)//(merge*merge) for t,h,w in entry["image_grid_thw"])
             torch.cuda.synchronize(); torch.cuda.reset_peak_memory_stats(); gen_start=time.perf_counter()
             entry['model_executed']=True
-            with torch.inference_mode(), base_generation(runtime, use_adapter=use_adapter):
-                output = runtime.model.generate(**inputs,max_new_tokens=max_tokens,do_sample=False,max_time=35.0)
+            with torch.inference_mode(), generation_context(runtime,stage,use_adapter=use_adapter):
+                budget = 90.0 if stage.startswith('adaptive_') or stage == 'dialogue_training_eval' else 35.0
+                output = runtime.model.generate(**inputs,max_new_tokens=max_tokens,do_sample=False,max_time=budget)
             torch.cuda.synchronize()
             entry.update(generation_seconds=time.perf_counter()-gen_start,input_tokens=int(inputs["input_ids"].shape[1]),
                          output_tokens=int(output.shape[1]-inputs["input_ids"].shape[1]),peak_cuda_gib=torch.cuda.max_memory_allocated()/2**30)
@@ -176,6 +177,8 @@ class FullConversation:
             eos=eos if isinstance(eos,list) else [eos]
             finished=int(output[0,-1].item()) in eos
             entry.update(raw_output=raw,status="ok" if finished else 'partial',stop_reason='eos' if finished else 'token_or_time_budget',total_seconds=time.perf_counter()-started)
+            entry['dialogue_adapter_sha256'] = getattr(runtime,'dialogue_adapter_sha256',None) if stage in STAGES else None
+            entry['adapter_mode']='dialogue' if entry['dialogue_adapter_sha256'] else ('requested_adapter' if use_adapter else 'base')
         except KeyboardInterrupt:
             entry.update(status='cancelled',total_seconds=time.perf_counter()-started)
             raise

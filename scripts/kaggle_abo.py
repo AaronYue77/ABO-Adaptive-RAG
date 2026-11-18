@@ -156,6 +156,22 @@ def _start(source_overlay=None):
 
 
 def verify(session):
+    """GPU smoke and separately labelled deterministic catalogue regressions."""
+    from app.abo.service import AboDialogue
+    from scripts.kaggle_abo_public import verify as verify_gpu
+    import uuid
+    from common import WORKSPACE
+    verify_gpu(session)
+    source_output=WORKSPACE/'reports/ecommerce_rag'/('abo-source-regression-'+uuid.uuid4().hex[:10])
+    source_output.mkdir(parents=True)
+    source_session=AboDialogue(source_output,gpu=False,entry='原确定性取证回归，单独报告')
+    try:
+        return verify_source_fields(source_session)
+    finally:
+        source_session.close()
+
+
+def verify_source_fields(session):
     from app.abo.validation import run_category_validation, run_presentation_validation, run_validation
     from common import WORKSPACE
 
@@ -163,7 +179,6 @@ def verify(session):
     if not checks_script.is_file():
         checks_script = WORKSPACE/"scripts/kaggle_stage_d_chat.py"
     smoke = runpy.run_path(str(checks_script))
-    smoke["verify"](session)
     smoke["verify_categories"](session)
     result = run_validation(session,session.output/"cross-category.json",require=True)
     print(f"Cross-category regression {result['passed']}/{result['cases']}.",flush=True)

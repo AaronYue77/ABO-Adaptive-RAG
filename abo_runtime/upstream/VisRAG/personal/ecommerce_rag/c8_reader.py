@@ -34,12 +34,16 @@ class ReaderAdapter:
             return
         if active is not None:
             raise ValueError("A different reader adapter is already attached")
-        runtime.model = PeftModel.from_pretrained(runtime.model, self.directory).eval()
+        if isinstance(runtime.model,PeftModel):
+            runtime.model.load_adapter(self.directory,adapter_name='abo_reader')
+            runtime.model.set_adapter('abo_reader')
+        else:
+            runtime.model = PeftModel.from_pretrained(runtime.model, self.directory).eval()
         runtime.reader_adapter_sha256 = self.sha256
 
 
 def base_generation(runtime, *, use_adapter=False):
-    if getattr(runtime, "reader_adapter_sha256", None) and not use_adapter:
+    if getattr(runtime.model, "peft_config", None) and not use_adapter:
         return runtime.model.disable_adapter()
     return nullcontext()
 

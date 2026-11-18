@@ -72,7 +72,12 @@ def prepare():
     with log_lock(workspace/'.web-setup'):
         for asset in ASSETS.rglob('*.json'):
             dest=data/asset.relative_to(ASSETS)
-            if not dest.is_file():
+            update_dialogue = asset.name=='stage-dialogue-active.json' and dest.is_file() and dest.read_bytes()!=asset.read_bytes()
+            if update_dialogue:
+                previous=workspace/'reports/adapter-config-history'/('dialogue-'+sha(dest)[:12]+'.json')
+                previous.parent.mkdir(parents=True,exist_ok=True)
+                if not previous.is_file():copy2(dest,previous)
+            if not dest.is_file() or update_dialogue:
                 dest.parent.mkdir(parents=True,exist_ok=True)
                 copy2(asset,dest)
         download(FONT+'NotoSansSC%5Bwght%5D.ttf',font,

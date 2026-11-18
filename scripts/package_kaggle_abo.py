@@ -38,6 +38,23 @@ def source_overlay():
     return b64encode(compress(json.dumps(changes,ensure_ascii=False).encode('utf-8'),9)).decode('ascii')
 
 
+def notebook_reset(tag):
+    return f'''import sys
+_abo_source_tag = {tag!r}
+if "chat" in globals() and globals().get("_abo_release_tag") != _abo_source_tag:
+    chat.close()
+    del globals()["chat"]
+    _service_file = getattr(sys.modules.get("app.abo.service"), "__file__", None)
+    if _service_file:
+        _old_root = Path(_service_file).resolve().parents[2]
+        for _name, _module in list(sys.modules.items()):
+            _file = getattr(_module, "__file__", None)
+            if _file and Path(_file).resolve().is_relative_to(_old_root):
+                sys.modules.pop(_name, None)
+        sys.path[:] = [_path for _path in sys.path if not str(_path).startswith(str(_old_root))]
+'''
+
+
 def notebook(online=False, overlay=None):
     init = '''from pathlib import Path
 from zipfile import ZipFile
@@ -57,8 +74,12 @@ if "chat" not in globals():
     bootstrap = runpy.run_path(str(script))
     chat = bootstrap["start"]()
 
+from uuid import uuid4
+_abo_notebook_thread = globals().get("_abo_notebook_thread") or uuid4().hex
+
 def ask(text, *, details=False):
-    row = chat.respond(text)
+    from app.abo.cloud import cloud_request
+    row = cloud_request(chat, {"thread_id":_abo_notebook_thread,"request_id":uuid4().hex,"question":text})["row"]
     print(row["display_answer"])
     for label in dict.fromkeys(source["label"] for source in row["display_sources"]):
         print("来源", label)
@@ -82,8 +103,14 @@ print("会话日志", chat.output)
                 + f'    script.write_text({code!r}, encoding="utf-8")\n' + init[end:])
         if overlay:
             init = init.replace('bootstrap["start"]()',f'bootstrap["start"](source_overlay={overlay!r})',1)
+    fingerprints=''.join(name+sha256(path.read_bytes()).hexdigest() for name,path in sorted(source_files().items()))
+    active=ROOT/'abo_runtime/data/ecommerce_rag/stage-dialogue-active.json'
+    if active.is_file():fingerprints+=sha256(active.read_bytes()).hexdigest()
+    fingerprint=sha256(fingerprints.encode()).hexdigest()
+    init=init.replace('if "chat" not in globals():',notebook_reset(fingerprint)+'\nif "chat" not in globals():',1)
+    init=init.replace('from uuid import uuid4\n','_abo_release_tag = _abo_source_tag\n\nfrom uuid import uuid4\n',1)
     verify = 'checks = bootstrap["verify"](chat)\n'
-    sample = 'ask("重置");\nask("我想查询电风扇这类商品");\n'
+    sample = 'ask("我想查询电风扇这类商品");\n'
     description = ("# ABO Adaptive RAG 商品助手\n"
                    "基于 Adaptive-rag 的独立 ABO 项目。运行第一个代码单元格后，可调用 ask()。\n"
                    "支持历史商品取证、规格比较、原图、配件兼容和现有售后政策快照。\n"
@@ -104,12 +131,19 @@ def prepare(cloud_input):
     kernel.mkdir(parents=True,exist_ok=True)
     files = source_files()
     library = ROOT/"abo_runtime"
-    for name in ("scripts/kaggle_abo.py", "scripts/kaggle_abo_checks.py"):
+    for name in ("scripts/kaggle_abo.py", "scripts/kaggle_abo_checks.py", "scripts/kaggle_abo_public.py"):
         files[name] = ROOT/name
     for name in ("data/ecommerce_rag/stage-c-active.json", "data/ecommerce_rag/policies-us-v1/clauses.json",
                  *[f"data/ecommerce_rag/abo-stage-d-v1/{name}" for name in ("cases.jsonl", "protocol.json", "router.json")],
                  *(ADAPTER/name for name in ("adapter_config.json", "adapter_model.safetensors"))):
         files[Path(name).as_posix()] = library/name
+    dialogue=library/'data/ecommerce_rag/stage-dialogue-active.json'
+    if dialogue.is_file():
+        active=json.loads(dialogue.read_text('utf-8'))
+        files['data/ecommerce_rag/stage-dialogue-active.json']=dialogue
+        for name in ('adapter_config.json','adapter_model.safetensors'):
+            path=Path(active['directory'])/name
+            files[path.as_posix()]=library/path
     image_key = "896a0727c940e9d8d717262e14927ec37530de2f59ac0c78dcdec6ca91d6b879.jpg"
     for name in (image_key, image_key+".json"):
         path = CATALOG/"images"/name

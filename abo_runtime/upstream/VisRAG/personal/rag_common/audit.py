@@ -27,6 +27,10 @@ def format_question(row: dict) -> str:
         lines += [f"会话ID：{row['session_id']}；轮次：{row['turn_number']}",
                   f"本轮前商品上下文：{json.dumps(row.get('context_before', {}), ensure_ascii=False)}",
                   f"本进程模型累计加载次数：{row.get('model_load_count', '未记录')}"]
+    if row.get('task_plan'):
+        lines.extend([f"本轮多任务计划：{json.dumps(row['task_plan'],ensure_ascii=False)}",
+                      f"各工具结果：{json.dumps([{'question':item['question'],'decision':item['decision']} for item in row.get('task_results',[])],ensure_ascii=False)}",
+                      f"需求取证检查：{json.dumps([{'listing_key':item['listing_key'],'age_check':item.get('age_check')} for item in row.get('requirement_checks',[])],ensure_ascii=False)}"])
     generated = row.get("model") is not None
     lines.extend([f"模型答案：{row.get('answer', '生成失败' if generated else '未运行生成（仅检索模式）')}",
                   f"输出引用：{', '.join(row.get('citations', [])) or '无'}",

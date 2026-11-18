@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import sys
 from threading import RLock
+from time import perf_counter
 
 from app.agents.abo_graph import build_abo_graph
 from app.abo.presentation import present
@@ -31,17 +32,34 @@ class AboDialogue:
         self._lock = RLock()
         self.journal = SessionJournal(output, entry)
         try:
+            if gpu:
+                from app.abo.dialogue_adapter import prepare as prepare_dialogue_adapter
+                prepare_dialogue_adapter()
             package = Path(__file__).resolve().parent
             extra = [*package.glob("*.py"),package.parent/"agents/abo_graph.py",package.parent/"core/enums.py"]
             self.engine = StageDChat(output, gpu=gpu, visual=visual, model_dir=model_dir,application_sources=extra)
             self.app = self.engine.app
             self.graph = build_abo_graph(self)
+            self.turn_memory = {}
+            if gpu:
+                self.journal.event('model_load','开始','在就绪前加载一个8B底座和已验收的适配器，后续问答复用。')
+                runtime=self.app.reader.ensure_reader().vlm
+                self.app.reader.adapter.mount(runtime)
+                from app.abo.dialogue_adapter import generation_context
+                with generation_context(runtime,'adaptive_turn_plan'):
+                    pass
+                self.journal.event('model_load','完成','8B底座已加载，图文与对话适配器按任务切换。')
             profile = "Qwen GPU" if gpu else "本地索引"
             if visual:
                 profile += " + VisRAG-Ret"
             self.journal.ready(profile, self.engine.config_sha)
         except Exception as error:
             self.journal.failed("初始化", error)
+            if getattr(self,'engine',None) is not None:
+                try:
+                    self.engine.close()
+                except Exception:
+                    pass
             self.journal.close()
             raise
 
@@ -100,7 +118,16 @@ class AboDialogue:
             if self.journal.closed:
                 raise RuntimeError("会话已结束。")
             try:
-                result = self.graph.invoke({"question": text})["result"]
+                started = perf_counter()
+                from app.abo.turns import AdaptiveTurn
+                result = AdaptiveTurn(self).run(text)
+                if result is None:
+                    result = self.graph.invoke({"question": text})["result"]
+                if any(call.get('model_executed') for call in result.get('model_calls',[])):
+                    result['model'] = self.app.reader.model_name
+                    result['model_revision'] = self.app.reader.revision
+                    result['generation_seconds'] = sum(call.get('generation_seconds',0) for call in result['model_calls'])
+                result['total_seconds'] = perf_counter()-started
             except Exception as error:
                 self.journal.failed("对话请求", error, text)
                 raise

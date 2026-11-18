@@ -56,10 +56,17 @@ class RemoteKernel:
             scheme="wss" if address.scheme == "https" else "ws",
             path=f"{address.path}/api/kernels/{kernel_id}/channels", query=query,
         ))
+        self._channel_url = url
         self.socket = create_connection(url, timeout=20, redirect_limit=0)
+        self.heartbeats = 0
 
     def close(self):
         self.socket.close()
+
+    def reopen(self):
+        try:self.socket.close()
+        except (WebSocketException,OSError):pass
+        self.socket=create_connection(self._channel_url,timeout=20,redirect_limit=0)
 
     def execute(self, expression, timeout):
         identity = uuid4().hex
@@ -82,8 +89,15 @@ class RemoteKernel:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     raise WebSocketTimeoutException()
-                self.socket.settimeout(remaining)
-                frame = self.socket.recv()
+                self.socket.settimeout(min(remaining,15))
+                try:
+                    frame = self.socket.recv()
+                except WebSocketTimeoutException:
+                    if time.monotonic() >= deadline:
+                        raise
+                    self.socket.ping('abo-keepalive')
+                    self.heartbeats += 1
+                    continue
                 if frame == "":
                     raise ChatConnectionError("Kaggle 会话已断开。请确认 Notebook 会话仍在运行。")
                 if isinstance(frame, bytes):
@@ -114,7 +128,7 @@ class RemoteKernel:
 
 READY = (
     "type(globals().get('chat')).__module__ == 'app.abo.service' "
-    "and callable(globals().get('ask')) and chat.app.model_available"
+    "and callable(globals().get('ask')) and chat.app.model_available and not chat.journal.closed"
 )
 
 
@@ -133,7 +147,17 @@ def connect(address):
 
 
 def ask(kernel, question):
-    result = kernel.execute(f"chat.respond({question!r})", timeout=300)
+    identity=getattr(kernel,'session',None)
+    if not isinstance(identity,str):identity=uuid4().hex
+    payload={'thread_id':identity,'request_id':uuid4().hex,'question':question}
+    for attempt in range(2):
+        try:
+            reply=kernel.execute("__import__('app.abo.cloud',fromlist=['cloud_request']).cloud_request(chat,"+repr(payload)+')',timeout=420)
+            break
+        except (ChatConnectionError,WebSocketException,OSError):
+            if attempt:raise
+            kernel.reopen()
+    result=reply.get('row',reply)
     print("助手：" + (result.get("display_answer") or result["answer"]))
     for label in dict.fromkeys(source["label"] for source in result.get("display_sources",[])):
         print("  来源 "+label)

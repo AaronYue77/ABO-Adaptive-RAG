@@ -6,7 +6,7 @@
 - 回答默认使用 ABO 原始商品名称和自然句子。商品编号保存在引用和逐题记录中，可按需显示。
 - 可按类目和站点统计历史记录，也可按明确的颜色、材质、尺码和款式筛选并继续调整条件。尺码引用原始标注，同站点变体另行核对。
 - 比较重量、尺寸和类别属性时分别核对来源。缺价格、库存或执行能力时说明边界。
-- 本地 GPU 与 Kaggle 可用 Qwen3-VL-8B-Instruct 做短寒暄、意图分类和图文读取，接入 C 阶段 120/50 LoRA。D 阶段提供四角色配件兼容检查。
+- 本地 GPU 与 Kaggle 的 Qwen3-VL-8B-Instruct 每轮规划多个必要任务，组合商品检索、需求适用性、推荐理由、属性、计数、兼容、政策和图片。源字段重新核查，未知年龄适用性不能当成已验证推荐。C 阶段 120/50 图文 LoRA 与 D 阶段四角色兼容检查保留。
 
 [统一问答架构](docs/ABO架构与验证.md) · [A–D 阶段详细流程](docs/A-D阶段流程.md) · [日志与排查](docs/日志与排查.md) · [上游原始说明](README.upstream.md)
 
@@ -34,18 +34,21 @@ sh ./start-web.cmd
 
 默认使用本机 CPU 查询历史商品资料，启动只依赖公开资产，无需 NVIDIA 显卡、模型下载、Node.js 或 Kaggle 账号。需要 Qwen3-VL-8B 时，可以用自己的 Kaggle 账号复制公开 Notebook，再从网页右上角连接。 [公开 8B Notebook](https://www.kaggle.com/code/aaronyue77/abo-adaptive-rag-public-8b) · [Kaggle 连接说明](docs/Kaggle调用与LoRA导出.md)
 
+历史对话可以继续提问。点击“新对话”建立独立上下文，回到历史时恢复该段需求和商品选择。刷新网页或重启本机服务后仍可恢复；Kaggle 会话结束后，需要连接新的有效地址再续聊。临时通道故障会有限重连，并用请求编号避免重复执行。日志和历史保存在本机项目目录，不会上传到 GitHub。 [多任务对话与恢复机制](docs/多任务对话与恢复.md)
+
 ## A-D 总流程
 
 ```mermaid
 flowchart LR
     data["ABO 商品、图像与来源"] --> a["A · 商品数据与证据<br/>全库、站点身份、索引与证据页"]
-    a --> b["B · 对话与取证<br/>搜索、追问、源字段和引用"]
+    a --> b["B · 多任务对话与取证<br/>需求、检索、适用性、推荐理由和引用"]
     b --> c["C · 8B 图文微调<br/>冻结证据、QLoRA、配对评测"]
     b -.-> vision["本地可选 VisRAG-Ret<br/>文字候选的商品图重排"]
     a --> d["D · 配件兼容<br/>需求、型号、检索、复核"]
     b --> d
     c -->|正式适配器按需读图| d
     entry["浏览器、PowerShell、HTTP、Kaggle<br/>Adaptive-rag 分流"] --> b
+    entry --> memory["独立历史对话与需求快照<br/>断线恢复和请求去重"] --> b
     entry --> browse["网页类目、商品照片和属性"]
     a --> browse
     entry --> d

@@ -91,6 +91,8 @@ def initialize(workspace, event):
     event(f'使用 GPU {torch.cuda.get_device_name(0)}')
     prepare_adapter(workspace)
     prepare()
+    from app.abo.dialogue_adapter import prepare as prepare_dialogue_adapter
+    prepare_dialogue_adapter()
     out = workspace/'reports/ecommerce_rag'/('abo-public-kaggle-'+uuid4().hex[:10])
     out.mkdir(parents=True)
     return AboDialogue(out, gpu=True, entry='公开 Kaggle Notebook')
@@ -128,6 +130,7 @@ def verify(chat):
               'gpu':torch.cuda.get_device_name(0), 'catalog_records':manifest['records'], 'checks':checks}
     write_json(chat.output/'public-demo-verify.json', report)
     write_json(Path('/kaggle/working/abo-public-validation.json'), report)
-    chat.respond('重置')
+    from app.abo.state import clear_state
+    clear_state(chat,'公开演示验收完成，恢复空上下文；这是程序事件，并非用户输入。')
     print('公开资源验收通过 · 检索、真实 8B 调用、LoRA 读图和来源', flush=True)
     return report

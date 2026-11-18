@@ -81,10 +81,14 @@ class StageDChat:
         self.turn = 0
         self.source_sha = snapshot(output,extra=application_sources)
         config = output/"config.json"
+        from app.abo.dialogue_adapter import configuration as dialogue_configuration
+        dialogue_adapter = dialogue_configuration() if gpu else None
         write_json(config,{"entry":ENTRY_VERSION,"compatibility_workflow":VERSION,"mode":mode,
                            "gpu":gpu,"visual_rerank":visual,"catalog_records":self.app.retriever.manifest["records"],
                            "adapter_sha256":adapter.sha256 if adapter else None,
-                           "source_sha256":self.source_sha,"compatibility_protocol":protocol})
+                           "source_sha256":self.source_sha,"compatibility_protocol":protocol,
+                           "dialogue_adapter_sha256":dialogue_adapter['adapter_sha256'] if dialogue_adapter else None,
+                           "dialogue_planner":"adaptive-multiple-tools-v1" if gpu else "source-lookup"})
         self.config_sha = file_hash(config)
 
     def close(self):

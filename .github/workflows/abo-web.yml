@@ -35,6 +35,9 @@ jobs:
             throw 'The launcher did not install its portable Python.'
           }
           .\.venv-web\Scripts\python.exe scripts/smoke_web.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          .\.venv-web\Scripts\python.exe -m unittest tests.unit.test_abo_resume tests.unit.test_abo_journal -q
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Run the public Unix launcher with Python absent from PATH
         if: runner.os != 'Windows'
         shell: bash
@@ -46,3 +49,4 @@ jobs:
           PATH="$tools" sh ./start-web.cmd --prepare-only --no-browser
           for ready in .cache/abo-web-python/*/.ready; do test -f "$ready"; done
           .venv-web/bin/python scripts/smoke_web.py
+          .venv-web/bin/python -m unittest tests.unit.test_abo_resume tests.unit.test_abo_journal -q

@@ -7,7 +7,7 @@ from functools import lru_cache
 
 
 COLORS = {
-    "红色": "red", "黑色": "black", "白色": "white", "蓝色": "blue", "绿色": "green",
+    "红色": "red", "黑色": "black", "白色": "white", "蓝色": "blue|navy", "绿色": "green",
     "粉色": "pink", "灰色": "gray|grey", "黄色": "yellow", "紫色": "purple",
     "橙色": "orange", "棕色": "brown", "银色": "silver", "金色": "gold",
 }
@@ -139,7 +139,10 @@ def matches_criteria(title, kind, raw_json, criteria_json):
         if not (label or excluded):
             continue
         choices = [label] if isinstance(label, str) else (label or [])
-        values = [value for field in fields for value in field_texts(raw, field, standardized=key == "color")]
+        values = [value for field in fields for value in field_texts(raw, field)]
+        # A normalized label must not turn an explicit Red listing into a Black match.
+        if not values and key=='color':
+            values=list(field_texts(raw,'color',standardized=True))
         def includes(value, source):
             match = alias_pattern(names[value]).search(source)
             return value in source or (match and not re.match(r'[- ]free\b',source[match.end():],re.I))

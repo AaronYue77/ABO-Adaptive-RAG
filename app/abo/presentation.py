@@ -141,7 +141,9 @@ def present(row, retriever):
     action=row.get("decision") or row.get("action")
     names=item_names(row,retriever) if (KEY.search(answer) or row.get("catalog_items") or row.get("matches")
                                         or row.get("claims")) else {}
-    if action in {"search_results","found"} and (row.get("catalog_items") or row.get("matches")):
+    if row.get('conversational_answer'):
+        pass
+    elif action in {"search_results","found"} and (row.get("catalog_items") or row.get("matches")):
         answer=list_products({**row,"decision":action},names,show_ids)
     elif action=="selected" and row.get("current_listing_keys_after"):
         key=row["current_listing_keys_after"][0]
@@ -157,6 +159,9 @@ def present(row, retriever):
             answer="我可以帮你找商品和规格，不过现有 ABO 资料没有可核实的售价或折扣。"
     if not show_ids:
         answer=KEY.sub(lambda match: names.get(match.group().rstrip("."),"这条商品记录"),answer)
+        for key,name in names.items():
+            sku=key.split('@',1)[0]
+            answer=re.sub(r'(?<![A-Z0-9])'+re.escape(sku)+r'(?![A-Z0-9])',lambda _:name,answer,flags=re.I)
     if action=="catalog":
         answer=re.sub(r'（[A-Z][A-Z0-9_]+）','',answer)
     return {"display_answer":answer.strip(),"display_sources":readable_sources(row)}

@@ -23,6 +23,8 @@ def transcript_turn(row):
              f"来源：{'；'.join(sources or references) or '无'}"]
     if row.get("issue_id"):
         lines.append(f"关联问题：{row['issue_id']}")
+    if row.get('thread_id'):
+        lines.append(f"对话线程：{row['thread_id']}")
     return "\n" + "\n".join(lines) + "\n"
 
 

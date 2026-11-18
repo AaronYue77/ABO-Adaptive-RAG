@@ -86,14 +86,15 @@ function card(title, subtitle, image, className, run) {
 function historyFromStorage() {
   try {
     const previous = JSON.parse(localStorage.getItem(storageKey) || '[]');
-    return Array.isArray(previous) ? previous.filter((item) => item?.id && Array.isArray(item.messages)) : [];
+    return Array.isArray(previous) ? previous.filter((item) => item?.id && Array.isArray(item.messages))
+      .map(item => ({...item, id: item.id.replaceAll('-', '')})) : [];
   } catch {
     return [];
   }
 }
 
 let threads = historyFromStorage();
-const newThread = (cloud = false) => ({id: crypto.randomUUID(), mode: cloud ? 'kaggle' : 'local', messages: []});
+const newThread = (cloud = false) => ({id: crypto.randomUUID().replaceAll('-', ''), mode: cloud ? 'kaggle' : 'local', messages: []});
 let active = newThread();
 let browsing = true;
 let busy = false;
@@ -107,9 +108,9 @@ let detailRequest = 0;
 function remember() {
   if (!active.messages.length) return;
   active.updated = Date.now();
-  threads = [active, ...threads.filter((item) => item.id !== active.id)].slice(0, 12);
+  threads = [active, ...threads.filter((item) => item.id !== active.id)];
   try {
-    localStorage.setItem(storageKey, JSON.stringify(threads.map((item) => ({...item, messages: item.messages.slice(-40)}))));
+    localStorage.setItem(storageKey, JSON.stringify(threads));
   } catch {
     // The page remains usable when storage is disabled or full.
   }
@@ -168,8 +169,7 @@ function turn(content, assistant, pending = false) {
   return node;
 }
 
-function activeCloud() { return remote?.thread === active.id; }
-function archived() { return active.mode === 'kaggle' && !activeCloud(); }
+function activeCloud() { return Boolean(remote) && active.mode === 'kaggle'; }
 
 function renderChat() {
   const showConversation = !browsing && (active.messages.length > 0 || busy);
@@ -177,21 +177,27 @@ function renderChat() {
   conversation.hidden = !showConversation;
   byId('browse-button').textContent = showConversation || !active.messages.length ? '浏览类目 ↗' : '返回对话 ↗';
   conversation.replaceChildren(...active.messages.map((item) => turn(item, item.role === 'assistant')));
-  if (busy && showConversation) conversation.append(turn({text: '正在查找资料…'}, true, true));
+  if (busy && showConversation) conversation.append(turn({text: '正在理解需求并核对商品资料…'}, true, true));
   if (showConversation) conversation.scrollTop = conversation.scrollHeight;
   sourcesPanel(active.messages.filter((item) => item.role === 'assistant').at(-1)?.sources);
-  const mode = activeCloud() ? 'kaggle' : ready ? 'local' : 'offline';
+  const mode = activeCloud() ? 'kaggle' : active.mode === 'kaggle' ? 'reconnect' : ready ? 'local' : 'offline';
   byId('mode').dataset.mode = mode;
-  byId('mode-text').textContent = {kaggle: 'Kaggle GPU', local: '本机目录', offline: '尚未就绪'}[mode];
+  byId('mode-text').textContent = {kaggle: 'Kaggle GPU', reconnect: 'Kaggle 待连接', local: '本机目录', offline: '尚未就绪'}[mode];
   byId('connection-button').textContent = remote ? 'Kaggle 连接 ↗' : '连接 Kaggle ↗';
   byId('disconnect').hidden = !remote;
   for (const id of ['new-chat', 'history-button', 'connection-button']) byId(id).disabled = busy;
-  questionBox.disabled = busy || archived();
+  questionBox.disabled = busy;
   byId('send').disabled = questionBox.disabled || !questionBox.value.trim();
 }
 
 async function send(text, visibleText = text) {
-  if (busy || archived() || !text.trim()) return;
+  if (busy || !text.trim()) return;
+  if (active.mode === 'kaggle' && !remote) {
+    showStatus('notice', '这段对话可以继续。请先连接正在运行的 Kaggle 会话，原有需求和商品选择会恢复。');
+    remoteDialog(false, '连接后可以在当前历史对话中继续提问。');
+    byId('connection-dialog').showModal();
+    return;
+  }
   const cloud = activeCloud();
   const user = {role: 'user', text: visibleText};
   active.messages.push(user);
@@ -201,21 +207,24 @@ async function send(text, visibleText = text) {
   showStatus('notice', '');
   renderChat();
   try {
-    const row = await post('/chat', {question: text, session_id: cloud ? remote.id : active.session || null});
+    if (active.pending?.text !== text) active.pending = {text, id: crypto.randomUUID().replaceAll('-', '')};
+    const row = await post('/chat', {question: text, session_id: cloud ? remote.id : active.session || null,
+      mode: active.mode, thread_id: active.id, request_id: active.pending.id, history: active.messages.slice(0, -1)});
+    delete active.pending;
     if (!cloud) active.session = row.action === 'exit' ? null : row.session_id;
     if (cloud && row.action === 'exit') remote = null;
     active.messages.push({role: 'assistant', text: row.answer, sources: row.sources, products: row.products});
     remember();
   } catch (error) {
     active.messages.pop();
+    remember();
     questionBox.value = text;
     if (error.status === 404 && !cloud) {
       active.session = null;
       if (active.messages.length) remember();
       showStatus('notice', '服务重启后这段对话的商品选择已过期。请重新指明商品，再发送问题。');
     } else if (cloud && (error.status === 404 || error.status === 502)) {
-      remote = null;
-      showStatus('notice', 'Kaggle 连接已中断。请重新连接，或新建本机对话。');
+      showStatus('notice', `${error.message} 当前对话和输入已保留，可以直接重试；若 Kaggle 会话已经结束，请更换连接地址。`);
     } else {
       showStatus('notice', error.status ? error.message : '无法连接问答服务，请检查启动窗口后重试。');
     }
@@ -315,7 +324,7 @@ async function openProduct(id) {
       dialog.close();
       send(`请查看 ${item.key} 的商品属性`, `请查看「${item.title}」的商品属性`);
     });
-    ask.disabled = busy || archived();
+    ask.disabled = busy;
     right.append(ask);
     detail.append(left, right);
     content.replaceChildren(detail);
@@ -327,26 +336,12 @@ async function openProduct(id) {
 async function startThread() {
   if (busy) return;
   showStatus('notice', '');
-  let warning = '';
-  if (remote) {
-    busy = true;
-    renderChat();
-    try {
-      await post('/chat', {question: '重置', session_id: remote.id});
-    } catch {
-      remote = null;
-      warning = 'Kaggle 会话已中断，已打开本机对话。';
-    } finally {
-      busy = false;
-    }
-  }
+  remember();
   active = newThread(Boolean(remote));
-  if (remote) remote.thread = active.id;
   browsing = true;
   questionBox.value = '';
   filter.value = '';
   showCategories();
-  showStatus('notice', warning);
   renderChat();
 }
 
@@ -356,11 +351,12 @@ function showHistory() {
   if (!threads.length) list.append(make('p', '开始提问后，历史对话会显示在这里。'));
   for (const thread of threads) {
     const option = button('', 'history-entry', () => {
+      remember();
       active = thread;
       browsing = false;
       questionBox.value = '';
       byId('history-dialog').close();
-      showStatus('notice', archived() ? '这段 Kaggle 对话已归档。点击新对话继续，或重新连接 Kaggle。' : '');
+      showStatus('notice', active.mode === 'kaggle' && !remote ? '这段对话可以继续。连接 Kaggle 后即可恢复上下文。' : '');
       renderChat();
     });
     option.append(make('span', thread.messages[0]?.text?.slice(0, 85) || '商品问答'),
@@ -371,8 +367,8 @@ function showHistory() {
 }
 
 function remoteDialog(busy, message = '') {
-  byId('address').disabled = busy || Boolean(remote);
-  byId('connect').hidden = Boolean(remote);
+  byId('address').disabled = busy;
+  byId('connect').hidden = false;
   byId('connect').disabled = busy;
   byId('disconnect').disabled = busy;
   showStatus('connection-status', message);
@@ -382,15 +378,14 @@ byId('connection-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   const address = byId('address');
   const value = address.value.trim();
-  if (!value || remote) return;
+  if (!value) return;
   remoteDialog(true, '正在连接 Kaggle…');
   address.value = '';
   try {
     const row = await post('/remote', {address: value});
-    active = newThread(true);
-    remote = {id: row.session_id, thread: active.id};
-    browsing = true;
-    questionBox.value = '';
+    active.mode = 'kaggle';
+    remote = {id: row.session_id};
+    remember();
     showStatus('notice', '');
     byId('connection-dialog').close();
     renderChat();
@@ -407,7 +402,7 @@ byId('disconnect').addEventListener('click', async () => {
   try {
     await request(`/chat/${remote.id}`, {method: 'DELETE'});
     remote = null;
-    if (active.mode === 'kaggle') active = newThread();
+    // Keep the conversation, so reconnecting can resume it at any time.
     browsing = !active.messages.length;
     questionBox.value = '';
     showStatus('notice', '');
@@ -452,6 +447,14 @@ document.querySelectorAll('[data-question]').forEach((control) =>
 async function initialize() {
   renderChat();
   try {
+    const [connection, saved] = await Promise.all([request('/remote/status'), request('/threads')]);
+    remote = connection.session_id ? {id: connection.session_id} : null;
+    if (remote && !active.messages.length) active.mode = 'kaggle';
+    const merged = new Map(threads.map(thread => [thread.id, thread]));
+    for (const thread of saved.items) {
+      if ((merged.get(thread.id)?.updated || 0) <= thread.updated) merged.set(thread.id, thread);
+    }
+    threads = [...merged.values()].sort((a, b) => b.updated - a.updated);
     const health = await request('/health');
     ready = health.status === 'ready';
     if (!ready) {
