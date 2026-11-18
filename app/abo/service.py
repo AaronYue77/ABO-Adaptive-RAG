@@ -1,13 +1,13 @@
 """Bind the Adaptive-rag graph to the scoped ABO catalog, Qwen and accessory roles."""
 
 import os
-from pathlib import Path
 import sys
+from pathlib import Path
 from threading import RLock
 from time import perf_counter
 
-from app.agents.abo_graph import build_abo_graph
 from app.abo.presentation import present
+from app.agents.abo_graph import build_abo_graph
 from app.core.enums import RetrievalStrategy
 
 
@@ -25,8 +25,9 @@ def bind_runtime():
 class AboDialogue:
     def __init__(self, output, *, gpu=False, visual=False, model_dir=None, entry="程序调用"):
         bind_runtime()
-        from app.abo.journal import SessionJournal
         from d_chat import StageDChat
+
+        from app.abo.journal import SessionJournal
 
         self.output = output
         self._lock = RLock()
@@ -34,28 +35,40 @@ class AboDialogue:
         try:
             if gpu:
                 from app.abo.dialogue_adapter import prepare as prepare_dialogue_adapter
+
                 prepare_dialogue_adapter()
             package = Path(__file__).resolve().parent
-            extra = [*package.glob("*.py"),package.parent/"agents/abo_graph.py",package.parent/"core/enums.py"]
-            self.engine = StageDChat(output, gpu=gpu, visual=visual, model_dir=model_dir,application_sources=extra)
+            extra = [
+                *package.glob("*.py"),
+                package.parent / "agents/abo_graph.py",
+                package.parent / "core/enums.py",
+            ]
+            self.engine = StageDChat(
+                output, gpu=gpu, visual=visual, model_dir=model_dir, application_sources=extra
+            )
             self.app = self.engine.app
             self.graph = build_abo_graph(self)
             self.turn_memory = {}
             if gpu:
-                self.journal.event('model_load','开始','在就绪前加载一个8B底座和已验收的适配器，后续问答复用。')
-                runtime=self.app.reader.ensure_reader().vlm
+                self.journal.event(
+                    "model_load", "开始", "在就绪前加载一个8B底座和已验收的适配器，后续问答复用。"
+                )
+                runtime = self.app.reader.ensure_reader().vlm
                 self.app.reader.adapter.mount(runtime)
                 from app.abo.dialogue_adapter import generation_context
-                with generation_context(runtime,'adaptive_turn_plan'):
+
+                with generation_context(runtime, "adaptive_turn_plan"):
                     pass
-                self.journal.event('model_load','完成','8B底座已加载，图文与对话适配器按任务切换。')
+                self.journal.event(
+                    "model_load", "完成", "8B底座已加载，图文与对话适配器按任务切换。"
+                )
             profile = "Qwen GPU" if gpu else "本地索引"
             if visual:
                 profile += " + VisRAG-Ret"
             self.journal.ready(profile, self.engine.config_sha)
         except Exception as error:
             self.journal.failed("初始化", error)
-            if getattr(self,'engine',None) is not None:
+            if getattr(self, "engine", None) is not None:
                 try:
                     self.engine.close()
                 except Exception:
@@ -73,18 +86,30 @@ class AboDialogue:
         session = self.engine.catalog
         identifiers = exact_skus(question)
         last_lane = self.engine.last_lane
-        selected = session.last_lane=="product" and bool(session.selected)
+        selected = session.last_lane == "product" and bool(session.selected)
         context = bool(identifiers or selected or session.candidates)
         scoped = scope_route(question, last_lane, bool(identifiers))
         if scoped:
-            strategy = RetrievalStrategy.REFUSE if scoped["intent"] == "out_of_scope" else RetrievalStrategy.DIRECT
+            strategy = (
+                RetrievalStrategy.REFUSE
+                if scoped["intent"] == "out_of_scope"
+                else RetrievalStrategy.DIRECT
+            )
             reason = scoped["reason"]
         elif price_request(question, context) or direct_business_request(question):
             has_fields = fields_alongside_price(question)
             strategy = RetrievalStrategy.MULTI if has_fields else RetrievalStrategy.DIRECT
-            reason = "readable_fields_and_unavailable_prices" if has_fields else "unavailable_business_data"
-        elif compatibility_request(question, pending=self.engine.pending,
-                                   recent=last_lane == "compatibility", selected=selected):
+            reason = (
+                "readable_fields_and_unavailable_prices"
+                if has_fields
+                else "unavailable_business_data"
+            )
+        elif compatibility_request(
+            question,
+            pending=self.engine.pending,
+            recent=last_lane == "compatibility",
+            selected=selected,
+        ):
             strategy, reason = RetrievalStrategy.AGENT, "read_only_accessory_roles"
         elif len(identifiers) > 1 or comparison_axis(question) or plan_field_lookups(question):
             strategy, reason = RetrievalStrategy.MULTI, "independent_source_fields_or_comparison"
@@ -93,10 +118,17 @@ class AboDialogue:
         return {"strategy": strategy, "routing_reason": reason}
 
     def _execute(self, state, *, compatibility):
-        return {"result": self.engine.respond(state["question"], allow_compatibility=compatibility,
-                                               presenter=self._present, adaptive={
-            "strategy": state["strategy"].value, "reason": state["routing_reason"],
-        })}
+        return {
+            "result": self.engine.respond(
+                state["question"],
+                allow_compatibility=compatibility,
+                presenter=self._present,
+                adaptive={
+                    "strategy": state["strategy"].value,
+                    "reason": state["routing_reason"],
+                },
+            )
+        }
 
     def _present(self, row):
         display = present(row, self.app.retriever)
@@ -106,10 +138,10 @@ class AboDialogue:
         return display
 
     def execute(self, state):
-        return self._execute(state,compatibility=False)
+        return self._execute(state, compatibility=False)
 
     def check_compatibility(self, state):
-        return self._execute(state,compatibility=True)
+        return self._execute(state, compatibility=True)
 
     def respond(self, text):
         if not isinstance(text, str) or not 0 < len(text.strip()) <= 1600:
@@ -120,14 +152,17 @@ class AboDialogue:
             try:
                 started = perf_counter()
                 from app.abo.turns import AdaptiveTurn
+
                 result = AdaptiveTurn(self).run(text)
                 if result is None:
                     result = self.graph.invoke({"question": text})["result"]
-                if any(call.get('model_executed') for call in result.get('model_calls',[])):
-                    result['model'] = self.app.reader.model_name
-                    result['model_revision'] = self.app.reader.revision
-                    result['generation_seconds'] = sum(call.get('generation_seconds',0) for call in result['model_calls'])
-                result['total_seconds'] = perf_counter()-started
+                if any(call.get("model_executed") for call in result.get("model_calls", [])):
+                    result["model"] = self.app.reader.model_name
+                    result["model_revision"] = self.app.reader.revision
+                    result["generation_seconds"] = sum(
+                        call.get("generation_seconds", 0) for call in result["model_calls"]
+                    )
+                result["total_seconds"] = perf_counter() - started
             except Exception as error:
                 self.journal.failed("对话请求", error, text)
                 raise

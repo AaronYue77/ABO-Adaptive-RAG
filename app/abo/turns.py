@@ -139,7 +139,7 @@ def complete_plan(plan, text, has_context):
 def age_check(source, needs):
     """Only explicit source age statements establish age eligibility."""
     age = needs.get("age")
-    if not isinstance(age, (int, float)):
+    if not isinstance(age, int | float):
         return "not_requested"
     from full_catalog import values
 
@@ -455,7 +455,7 @@ class AdaptiveTurn:
             match = re.fullmatch(r"\s*(\d{1,3})(?:\s*岁)?\s*", needs["age"])
             needs["age"] = int(match[1]) if match else None
         if needs.get("age") is not None and (
-            not isinstance(needs["age"], (int, float)) or not 0 <= needs["age"] <= 120
+            not isinstance(needs["age"], int | float) or not 0 <= needs["age"] <= 120
         ):
             needs["age"] = None
         if needs.get("age") is None:
@@ -794,10 +794,10 @@ class AdaptiveTurn:
             facts.pop()
             sources.pop()
         age = needs.get("age")
-        strict_age = isinstance(age, (int, float)) and (
+        strict_age = isinstance(age, int | float) and (
             age < 18 or bool(re.search(r"适龄|适用年龄|确认适合|确定适合|安全|儿童", text))
         )
-        conditional_age = isinstance(age, (int, float)) and age >= 18 and not strict_age
+        conditional_age = isinstance(age, int | float) and age >= 18 and not strict_age
         eligible = [
             source["listing_key"]
             for source in facts

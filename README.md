@@ -99,4 +99,18 @@ flowchart LR
 
 本地新增了 49 个真实商品对话回归用例，以及覆盖 576 类的一商品选择和资料追问检查。旧冻结的 A、B、C、D 数据协议适用原实验口径。已运行结果保存在工作区下的 `abo_runtime/reports/ecommerce_rag`，包括原始 JSONL 与逐题 TXT。
 
+GitHub 完整 CI 在 Python 3.11、3.12 上检查依赖锁定、代码格式、类型和测试，保留 70% 覆盖率门槛。普通电脑的开发者安装 [uv](https://docs.astral.sh/uv/getting-started/installation/) 后，可在项目根目录复现：
+
+```text
+uv lock --check
+uv sync --locked --extra dev --python 3.11
+uv run --locked python -m app.abo.web_setup
+uv run --locked python -m ruff format --check .
+uv run --locked python -m ruff check .
+uv run --locked python -m mypy
+uv run --locked python -m pytest -q --cov=app --cov=eval --cov-fail-under=70
+```
+
+首次测试需联网准备官方 ABO 目录，无需 GPU。测试包含 49 题对话、34 题购物、8 题自然展示、576 类目属性完整性，以及会话恢复、训练指令数据分离和下载完整性检查。上游 VisRAG 与冻结实验源文件保留原始格式，其行为通过源数据集成测试核对。CPU CI 不代表已经运行 8B 生成或视觉模型验收；四个平台的网页启动另有独立工作流。
+
 项目主体保留 Adaptive-rag 的 MIT 许可。复用的 VisRAG 派生代码保留 [Apache-2.0 许可](abo_runtime/upstream/VisRAG/LICENSE)。模型与 ABO 数据分别遵循各自的发布许可。训练二进制、私有数据夹具与本地运行日志保存在授权的工作区与 Kaggle 输入中。

@@ -1,13 +1,12 @@
 """Restore the standalone Kaggle release's data and adapter on Windows."""
 
 import argparse
-from hashlib import file_digest
 import json
+from hashlib import file_digest
 from pathlib import Path
 from zipfile import ZipFile
 
 from kaggle_abo import setup_catalog
-
 
 ROOT = Path(__file__).resolve().parents[1] / "abo_runtime"
 SOURCE = Path("offline/abo-source-for-kaggle.zip")

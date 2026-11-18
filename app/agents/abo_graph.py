@@ -30,7 +30,8 @@ def build_abo_graph(dialogue):
         graph.add_edge(name, END)
     graph.add_edge(START, "route_complexity")
     graph.add_conditional_edges(
-        "route_complexity", lambda state: state["strategy"].value,
+        "route_complexity",
+        lambda state: state["strategy"].value,
         {strategy.value: handler[0] for strategy, handler in handlers.items()},
     )
     return graph.compile()

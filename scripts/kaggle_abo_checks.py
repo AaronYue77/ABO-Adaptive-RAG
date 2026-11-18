@@ -3,6 +3,7 @@
 
 def verify(session):
     import re
+
     from common import write_json
     from full_catalogue import catalog_page
 
@@ -43,50 +44,97 @@ def verify(session):
         result = session.respond(text)
         if expected == "catalog":
             trace = result["retrieval_trace"]
-            catalog_pages.append({"start": trace.get("category_offset"), "end": trace.get("next_category_offset"),
-                                  "items": result.get("catalog_categories", [])})
+            catalog_pages.append(
+                {
+                    "start": trace.get("category_offset"),
+                    "end": trace.get("next_category_offset"),
+                    "items": result.get("catalog_categories", []),
+                }
+            )
         calls = result.get("model_calls", [])
-        checks.append({"question": text, "expected": expected, "actual": result["decision"],
-                       "lane": result["entry_lane"], "answer": result["answer"],
-                       "model_executed": any(x.get("model_executed") for x in calls),
-                       "has_evidence": bool(result.get("citations") or result.get("retrieved_pages")),
-                       "visual": bool(result.get("visual_observation")),
-                       "errors":result.get("errors",[])})
+        checks.append(
+            {
+                "question": text,
+                "expected": expected,
+                "actual": result["decision"],
+                "lane": result["entry_lane"],
+                "answer": result["answer"],
+                "model_executed": any(x.get("model_executed") for x in calls),
+                "has_evidence": bool(result.get("citations") or result.get("retrieved_pages")),
+                "visual": bool(result.get("visual_observation")),
+                "errors": result.get("errors", []),
+            }
+        )
     adaptive = verify_adaptive(session)
-    summary = {"checks": checks, "adaptive_checks": adaptive, "model_loads": session.app.reader.load_count,
-               "bilingual_categories": len(seen), "catalog_pages": catalog_pages}
+    summary = {
+        "checks": checks,
+        "adaptive_checks": adaptive,
+        "model_loads": session.app.reader.load_count,
+        "bilingual_categories": len(seen),
+        "catalog_pages": catalog_pages,
+    }
     write_json(session.output / "gpu-summary.json", summary)
     for check in checks:
         print(check["expected"], check["actual"], check["lane"], check["question"], flush=True)
     assert all(row["actual"] == row["expected"] for row in checks), checks
     assert all(row["model_executed"] for row in checks if row["expected"] == "chat"), checks
-    assert all(not row["model_executed"] and not row["has_evidence"]
-               for row in checks if row["expected"] == "out_of_scope"), checks
+    assert all(
+        not row["model_executed"] and not row["has_evidence"]
+        for row in checks
+        if row["expected"] == "out_of_scope"
+    ), checks
     assert checks[8]["visual"] and summary["model_loads"] == 1
     recent_pages = catalog_pages[-3:]
     assert [(page["start"], page["end"]) for page in recent_pages] == [(0, 14), (14, 28), (28, 42)]
     assert len({item["product_type"] for page in recent_pages for item in page["items"]}) == 42
     assert "宠物用品（PET_SUPPLIES）" in checks[-3]["answer"]
-    assert result["catalog_items"] and all(item["product_type"] == "PET_SUPPLIES" for item in result["catalog_items"])
-    print(f"Bilingual catalog: {len(seen)} source categories; first 3 pages: 42 unique categories", flush=True)
+    assert result["catalog_items"] and all(
+        item["product_type"] == "PET_SUPPLIES" for item in result["catalog_items"]
+    )
+    print(
+        f"Bilingual catalog: {len(seen)} source categories; first 3 pages: 42 unique categories",
+        flush=True,
+    )
     return summary
 
 
 def verify_adaptive(session):
     cases = (
         ("给我这个“B08BFW6627”的属性，谢谢", "answer", ("UMI", "Baby Blue", "4'x3'")),
-        ("B000EOSG8U@amazon.com 的颜色；B000EOSG8U@amazon.fr 的颜色", "answer", ("950 PLAT", "Plaque 950")),
-        ("B0ZZZZZZZZ@amazon.com 的颜色；B076QBF37R@amazon.in 的高度", "partial", ("未找到", "480 millimeters")),
-        ("请先查一下 B079J12C4W@amazon.com/go 的品牌，再查一下 B07KB1RTFF@amazon.sg 的品牌",
-         "answer", ("Amazon Basic Care", "AmazonBasics")),
+        (
+            "B000EOSG8U@amazon.com 的颜色；B000EOSG8U@amazon.fr 的颜色",
+            "answer",
+            ("950 PLAT", "Plaque 950"),
+        ),
+        (
+            "B0ZZZZZZZZ@amazon.com 的颜色；B076QBF37R@amazon.in 的高度",
+            "partial",
+            ("未找到", "480 millimeters"),
+        ),
+        (
+            "请先查一下 B079J12C4W@amazon.com/go 的品牌，再查一下 B07KB1RTFF@amazon.sg 的品牌",
+            "answer",
+            ("Amazon Basic Care", "AmazonBasics"),
+        ),
     )
     checks = []
     for question, expected, values in cases:
         row = session.respond(question)
-        passed = (row["decision"] == expected and bool(row["citations"]) and not row["model_calls"]
-                  and all(value in row["answer"] for value in values))
-        checks.append({"question": question, "decision": row["decision"], "passed": passed,
-                       "citations": row["citations"], "elapsed_seconds": row["total_seconds"]})
+        passed = (
+            row["decision"] == expected
+            and bool(row["citations"])
+            and not row["model_calls"]
+            and all(value in row["answer"] for value in values)
+        )
+        checks.append(
+            {
+                "question": question,
+                "decision": row["decision"],
+                "passed": passed,
+                "citations": row["citations"],
+                "elapsed_seconds": row["total_seconds"],
+            }
+        )
         print("Adaptive", row["decision"], passed, question, flush=True)
     assert all(row["passed"] for row in checks), checks
     return checks
@@ -99,5 +147,8 @@ def verify_categories(session):
         freeze()
     result = run(session.output / "category-coverage")
     assert result["passing_categories"] == result["categories"] == 576
-    print(f"Source-field audit: {result['passed']}/{result['cases']} across {result['categories']} categories", flush=True)
+    print(
+        f"Source-field audit: {result['passed']}/{result['cases']} across {result['categories']} categories",
+        flush=True,
+    )
     return result

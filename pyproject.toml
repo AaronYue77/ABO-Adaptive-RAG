@@ -26,6 +26,12 @@ dependencies = [
     "tenacity>=9.0.0,<10",
     "prometheus-client>=0.21.0,<0.22",
     "sse-starlette>=2.1.0,<3",
+    "numpy>=1.26,<3",
+    "Pillow>=10",
+    "PyMuPDF==2.0",
+    "reportlab==5.1.0",
+    "requests>=2.32",
+    "websocket-client==1.9.0",
 ]
 
 [project.optional-dependencies]
@@ -67,6 +73,9 @@ filterwarnings = [
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+# Preserve licensed upstream and frozen experiment source snapshots. Their
+# behavior is exercised by the ABO catalogue and conversation integration tests.
+extend-exclude = ["abo_runtime/upstream/VisRAG"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
