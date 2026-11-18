@@ -106,9 +106,17 @@ def complete_plan(plan, text, has_context):
     tasks = plan["tasks"]
     tools = {task["tool"] for task in tasks}
     changes = []
-    refinement = bool(
-        re.search(r"改成|改为|换成|换为|换个|换一款|换一批|只看|重新筛选|筛选|排除|不要", text)
-    ) or bool(released_requirements(text))
+    # A selected product's variant question belongs to its source/family lookup.
+    release_search = bool(released_requirements(text)) and not re.search(
+        r"第[一二三四五六七八九十\d]+(?:款|件|个|双|台)|这款|这件|这双|这个|该商品|所选|选中|它|\b[A-Z0-9]{10}@",
+        text,
+    )
+    refinement = (
+        bool(
+            re.search(r"改成|改为|换成|换为|换个|换一款|换一批|只看|重新筛选|筛选|排除|不要", text)
+        )
+        or release_search
+    )
     if (
         has_context
         and refinement
@@ -116,7 +124,7 @@ def complete_plan(plan, text, has_context):
         and plan.get("query")
         and (
             named_constraints(text)
-            or released_requirements(text)
+            or release_search
             or re.search(r"换个|换一款|换一批|重新筛选|(?:改|换).{0,8}(?:用途|用来|场景)", text)
         )
     ):
@@ -483,6 +491,20 @@ class AdaptiveTurn:
             needs[field] = [
                 str(item)[:300] for item in (value if isinstance(value, list) else [value])[:12]
             ]
+        if released or keep_requirements:
+            needs["constraints"] = list(
+                dict.fromkeys(
+                    [*(memory.get("needs", {}).get("constraints") or []), *needs["constraints"]]
+                )
+            )
+        # Preserve explicit wearer measurements verbatim; never convert them into a guessed size.
+        for match in re.finditer(
+            r"(?:身高|体重|脚长|脚宽|胸围|腰围|肩宽)\s*\d+(?:\.\d+)?\s*(?:cm|mm|kg|厘米|毫米|公斤|千克|斤|米)",
+            text,
+            re.I,
+        ):
+            if match.group() not in needs["constraints"]:
+                needs["constraints"].append(match.group())
         plan["needs"] = needs
         if released:
             # Remove only the released dimension; retain unrelated explicit requirements.
@@ -507,7 +529,7 @@ class AdaptiveTurn:
             not isinstance(needs["age"], int | float) or not 0 <= needs["age"] <= 120
         ):
             needs["age"] = None
-        if needs.get("age") is None:
+        if needs.get("age") is None and "age" not in released:
             age_match = re.search(r"(?<!\d)(\d{1,2})\s*(?:岁|[- ]year[- ]old)", text, re.I)
             if age_match:
                 needs["age"] = int(age_match[1])
@@ -594,7 +616,11 @@ class AdaptiveTurn:
                         criteria.pop(field, None)
                         criteria.pop("exclude_" + field, None)
                     prior = memory.get("search_contexts", [])
-                    if keep_requirements and len(prior) == 1 and query == memory.get("query"):
+                    if (
+                        (keep_requirements or released)
+                        and len(prior) == 1
+                        and query == memory.get("query")
+                    ):
                         old = dict(prior[0]["criteria"])
                         for key in ("color", "material"):
                             chosen = criteria.get(key)
@@ -676,6 +702,8 @@ class AdaptiveTurn:
                 }
                 for field in released & {"age", "gender"}:
                     local_needs[field] = needs[field]
+                if released:
+                    local_needs["constraints"] = needs["constraints"]
                 pool.sort(
                     key=lambda source: {
                         "supported": 0,

@@ -157,6 +157,14 @@ class WebChangesTests(unittest.TestCase):
                 "focus": [],
             }
             self.assertEqual(complete_plan(plan, question, True)["tasks"][0]["tool"], "search")
+        for question in ("第三款有哪些颜色？", "这款尺码有哪些？"):
+            plan = {
+                "tasks": [{"tool": "lookup", "question": question}],
+                "query": "mug",
+                "needs": {},
+                "focus": [3],
+            }
+            self.assertEqual(complete_plan(plan, question, True)["tasks"][0]["tool"], "lookup")
 
     def test_third_product_overrides_incorrect_planner_focus_for_different_categories(self):
         from full_app import public_item
@@ -243,3 +251,51 @@ class WebChangesTests(unittest.TestCase):
         self.assertIn("这次检索", row["display_answer"])
         self.assertEqual(stages, ["adaptive_turn_plan"])
         self.assertTrue(row["synthesis_guard"]["passed"])
+
+    def test_relaxation_preserves_other_filters_and_measured_needs_despite_stale_plan(self):
+        chat = AboDialogue(self.root / "relaxation")
+        self.addCleanup(chat.close)
+        chat.app.model_available = True
+        chat.turn_memory = {
+            "query": "mug",
+            "needs": {"age": 10, "constraints": ["黑色", "陶瓷", "身高142cm"]},
+            "search_contexts": [{"criteria": {"color": "黑色", "material": "陶瓷"}, "filters": {}}],
+        }
+        reader = SimpleNamespace(
+            vlm=SimpleNamespace(
+                processor=SimpleNamespace(tokenizer=SimpleNamespace(encode=lambda _: []))
+            )
+        )
+
+        def generate(messages, stage, trace, max_tokens):
+            if stage == "adaptive_turn_plan":
+                return json.dumps(
+                    {
+                        "tasks": [{"tool": "search", "question": "搜索黑色杯子"}],
+                        "query": "mug",
+                        "needs": {"age": 10, "constraints": ["黑色"]},
+                        "focus": [],
+                    }
+                )
+            return '{"query":"mug"}'
+
+        def search(query, mode, limit, filters, **kwargs):
+            self.assertEqual(kwargs["criteria"], {"material": "陶瓷"})
+            return {
+                "items": [],
+                "seconds": 0,
+                "trace": {"required_source_criteria": kwargs["criteria"]},
+            }
+
+        with (
+            patch.object(chat.app.conversation, "generate", side_effect=generate),
+            patch.object(chat.app.retriever, "search", side_effect=search),
+            patch.object(chat.app.reader, "ensure_reader", return_value=reader),
+        ):
+            row = chat.respond("不是给10岁用的了，年龄不限；颜色有哪些？体重33kg")
+        needs = row["task_plan"]["needs"]
+        self.assertIsNone(needs["age"])
+        self.assertIn("陶瓷", needs["constraints"])
+        self.assertIn("身高142cm", needs["constraints"])
+        self.assertIn("体重33kg", needs["constraints"])
+        self.assertNotIn("黑色", needs["constraints"])
