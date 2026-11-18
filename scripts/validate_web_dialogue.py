@@ -74,6 +74,7 @@ def verify(chat):
                 ), traces
             if "什么年龄" in question:
                 assert row["task_plan"]["needs"].get("age") is None
+                assert row["task_plan"]["needs"].get("gender") == "女"
             if not row.get("requirement_checks") and not row["citations"]:
                 assert "这次检索没有找到" in row["display_answer"]
 

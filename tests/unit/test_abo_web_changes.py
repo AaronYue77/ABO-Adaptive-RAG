@@ -310,7 +310,12 @@ class WebChangesTests(unittest.TestCase):
         chat.app.model_available = True
         chat.turn_memory = {
             "query": "mug",
-            "needs": {"age": 10, "constraints": ["黑色", "陶瓷", "身高142cm"]},
+            "needs": {
+                "age": 10,
+                "gender": "女",
+                "purpose": ["送礼"],
+                "constraints": ["黑色", "陶瓷", "身高142cm"],
+            },
             "search_contexts": [{"criteria": {"color": "黑色", "material": "陶瓷"}, "filters": {}}],
         }
         reader = SimpleNamespace(
@@ -325,7 +330,12 @@ class WebChangesTests(unittest.TestCase):
                     {
                         "tasks": [{"tool": "search", "question": "搜索黑色杯子"}],
                         "query": "mug",
-                        "needs": {"age": 10, "constraints": ["黑色"]},
+                        "needs": {
+                            "age": 10,
+                            "gender": "",
+                            "purpose": [],
+                            "constraints": ["黑色"],
+                        },
                         "focus": [],
                     }
                 )
@@ -347,6 +357,8 @@ class WebChangesTests(unittest.TestCase):
             row = chat.respond("不是给10岁用的了，年龄不限；颜色有哪些？体重33kg")
         needs = row["task_plan"]["needs"]
         self.assertIsNone(needs["age"])
+        self.assertEqual(needs["gender"], "女")
+        self.assertEqual(needs["purpose"], ["送礼"])
         self.assertIn("陶瓷", needs["constraints"])
         self.assertIn("身高142cm", needs["constraints"])
         self.assertIn("体重33kg", needs["constraints"])

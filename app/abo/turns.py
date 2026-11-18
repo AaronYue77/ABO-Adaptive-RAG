@@ -505,7 +505,7 @@ class AdaptiveTurn:
         keep_requirements = bool(
             re.search(r"其他.*(?:保持|不变)|保持.*(?:条件|用途)|再来|下一批|更多", text)
         )
-        if keep_requirements:
+        if keep_requirements or released:
             for field, value in (memory.get("needs") or {}).items():
                 if value and not needs.get(field) and field not in released:
                     needs[field] = value
