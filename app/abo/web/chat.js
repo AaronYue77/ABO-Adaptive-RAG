@@ -6,7 +6,7 @@ const questionBox = byId('question');
 const conversation = byId('conversation');
 const evidence = byId('evidence');
 const grid = byId('browse-grid');
-const scroller = byId('browse-scroll');
+const scroller = byId('welcome');
 const filter = byId('filter-categories');
 
 function make(tag, content = '', className = '') {
@@ -93,8 +93,11 @@ function historyFromStorage() {
   }
 }
 
-let threads = historyFromStorage();
-const newThread = (cloud = false) => ({id: crypto.randomUUID().replaceAll('-', ''), mode: cloud ? 'kaggle' : 'local', messages: []});
+const deletedKey = `${storageKey}-deleted`;
+let deleted = new Set();
+try { deleted = new Set(JSON.parse(localStorage.getItem(deletedKey) || '[]')); } catch { /* Storage is optional. */ }
+let threads = historyFromStorage().filter(item => !deleted.has(item.id));
+const newThread = () => ({id: crypto.randomUUID().replaceAll('-', ''), mode: 'kaggle', messages: []});
 let active = newThread();
 let browsing = true;
 let busy = false;
@@ -105,15 +108,23 @@ let categoryView = null;
 let categoryCountShown = pageSize;
 let detailRequest = 0;
 
+function persistHistory() {
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(threads));
+    localStorage.setItem(deletedKey, JSON.stringify([...deleted]));
+  } catch { /* The server also retains conversation history. */ }
+}
+
 function remember() {
+  if (deleted.has(active.id)) return;
   if (!active.messages.length && !active.pending) return;
   active.updated = Date.now();
   threads = [active, ...threads.filter((item) => item.id !== active.id)];
-  try {
-    localStorage.setItem(storageKey, JSON.stringify(threads));
-  } catch {
-    // The page remains usable when storage is disabled or full.
-  }
+  persistHistory();
+}
+
+function sourceLabel(source) {
+  return `${source.choice ? `第${source.choice}款 · ` : '来源 · '}${source.label}`;
 }
 
 function sourcesPanel(sources = [], highlighted = -1) {
@@ -125,11 +136,12 @@ function sourcesPanel(sources = [], highlighted = -1) {
   sources.forEach((source, index) => {
     const item = make('details', '', 'source-item');
     item.open = index === highlighted;
-    item.append(make('summary', `${index + 1} · ${source.label}`));
+    item.append(make('summary', sourceLabel(source)));
     if (source.excerpt) item.append(make('p', source.excerpt));
     if (source.member) item.append(make('code', `${source.member} · 第 ${source.line} 行`));
     const link = externalLink(source.url, '打开来源 ↗');
     if (link) item.append(link);
+    if (source.product_id) item.append(button('查看对应商品属性', 'quiet', () => openProduct(source.product_id)));
     evidence.append(item);
   });
 }
@@ -142,14 +154,14 @@ function turn(content, assistant, pending = false) {
     const products = make('div', '', 'chat-products');
     products.setAttribute('aria-label', '相关商品图片');
     for (const product of content.products) {
-      products.append(card(product.title, product.site, product.image, 'product-card', () => openProduct(product.id)));
+      products.append(card(`${product.choice ? `第${product.choice}款 · ` : ''}${product.title}`, product.site, product.image, 'product-card', () => openProduct(product.id)));
     }
     body.append(products);
   }
   if (assistant && !pending) {
     const tools = make('div', '', 'turn-tools');
     content.sources?.forEach((source, index) => {
-      tools.append(button(`${index + 1} · ${source.label}`, 'reference-button', () => {
+      tools.append(button(sourceLabel(source), 'reference-button', () => {
         sourcesPanel(content.sources, index);
         evidence.closest('section').scrollIntoView({block: 'nearest'});
         evidence.querySelectorAll('summary')[index]?.focus({preventScroll: true});
@@ -169,7 +181,7 @@ function turn(content, assistant, pending = false) {
   return node;
 }
 
-function activeCloud() { return Boolean(remote) && active.mode === 'kaggle'; }
+function activeCloud() { return Boolean(remote); }
 
 function renderChat() {
   const showConversation = !browsing && (active.messages.length > 0 || busy);
@@ -180,9 +192,9 @@ function renderChat() {
   if (busy && showConversation) conversation.append(turn({text: '正在理解需求并核对商品资料…'}, true, true));
   if (showConversation) conversation.scrollTop = conversation.scrollHeight;
   sourcesPanel(active.messages.filter((item) => item.role === 'assistant').at(-1)?.sources);
-  const mode = activeCloud() ? 'kaggle' : active.mode === 'kaggle' ? 'reconnect' : ready ? 'local' : 'offline';
+  const mode = activeCloud() ? 'kaggle' : 'reconnect';
   byId('mode').dataset.mode = mode;
-  byId('mode-text').textContent = {kaggle: 'Kaggle GPU', reconnect: 'Kaggle 待连接', local: '本机目录', offline: '尚未就绪'}[mode];
+  byId('mode-text').textContent = {kaggle: 'Kaggle GPU', reconnect: 'Kaggle 待连接'}[mode];
   byId('connection-button').textContent = remote ? 'Kaggle 连接 ↗' : '连接 Kaggle ↗';
   byId('disconnect').hidden = !remote;
   for (const id of ['new-chat', 'history-button', 'connection-button']) byId(id).disabled = busy;
@@ -192,13 +204,13 @@ function renderChat() {
 
 async function send(text, visibleText = text) {
   if (busy || !text.trim()) return;
-  if (active.mode === 'kaggle' && !remote) {
+  if (!remote) {
     showStatus('notice', '这段对话可以继续。请先连接正在运行的 Kaggle 会话，原有需求和商品选择会恢复。');
     remoteDialog(false, '连接后可以在当前历史对话中继续提问。');
     byId('connection-dialog').showModal();
     return;
   }
-  const cloud = activeCloud();
+  active.mode = 'kaggle';
   const user = {role: 'user', text: visibleText};
   active.messages.push(user);
   questionBox.value = '';
@@ -209,22 +221,24 @@ async function send(text, visibleText = text) {
   try {
     if (active.pending?.text !== text) active.pending = {text, id: crypto.randomUUID().replaceAll('-', '')};
     remember();
-    const row = await post('/chat', {question: text, session_id: cloud ? remote.id : active.session || null,
-      mode: active.mode, thread_id: active.id, request_id: active.pending.id, history: active.messages.slice(0, -1)});
+    const row = await post('/chat', {question: text, session_id: remote.id,
+      mode: 'kaggle', thread_id: active.id, request_id: active.pending.id, history: active.messages.slice(0, -1)});
     delete active.pending;
-    if (!cloud) active.session = row.action === 'exit' ? null : row.session_id;
-    if (cloud && row.action === 'exit') remote = null;
+    if (row.action === 'exit') remote = null;
     active.messages.push({role: 'assistant', text: row.answer, sources: row.sources, products: row.products});
     remember();
   } catch (error) {
     active.messages.pop();
     remember();
     questionBox.value = text;
-    if (error.status === 404 && !cloud) {
-      active.session = null;
-      if (active.messages.length) remember();
-      showStatus('notice', '服务重启后这段对话的商品选择已过期。请重新指明商品，再发送问题。');
-    } else if (cloud && (error.status === 404 || error.status === 502)) {
+    if (error.status === 410) {
+      deleted.add(active.id);
+      threads = threads.filter(item => item.id !== active.id);
+      persistHistory();
+      active = newThread();
+      browsing = true;
+      showStatus('notice', error.message);
+    } else if (error.status === 404 || error.status === 502) {
       showStatus('notice', `${error.message} 当前对话和输入已保留，可以直接重试；若 Kaggle 会话已经结束，请更换连接地址。`);
     } else {
       showStatus('notice', error.status ? error.message : '无法连接问答服务，请检查启动窗口后重试。');
@@ -338,7 +352,7 @@ async function startThread() {
   if (busy) return;
   showStatus('notice', '');
   remember();
-  active = newThread(Boolean(remote));
+  active = newThread();
   browsing = true;
   questionBox.value = '';
   filter.value = '';
@@ -347,13 +361,16 @@ async function startThread() {
 }
 
 function showHistory() {
+  showStatus('history-status', '');
   const list = byId('history-list');
   list.replaceChildren();
   if (!threads.length) list.append(make('p', '开始提问后，历史对话会显示在这里。'));
   for (const thread of threads) {
+    const entry = make('div', '', 'history-row');
     const option = button('', 'history-entry', () => {
       remember();
       active = thread;
+      active.mode = 'kaggle';
       browsing = false;
       questionBox.value = '';
       byId('history-dialog').close();
@@ -361,10 +378,28 @@ function showHistory() {
       renderChat();
     });
     option.append(make('span', thread.messages[0]?.text?.slice(0, 85) || '商品问答'),
-      make('small', `${thread.mode === 'kaggle' ? 'Kaggle GPU' : '本机目录'} · ${new Date(thread.updated).toLocaleString('zh-CN')}`));
-    list.append(option);
+      make('small', `Kaggle 对话 · ${new Date(thread.updated).toLocaleString('zh-CN')}`));
+    const remove = button('删除', 'quiet delete-thread', async () => {
+      if (!window.confirm('删除这段历史会话？删除后无法在历史列表中恢复。独立运行日志仍会保留。')) return;
+      remove.disabled = true;
+      try {
+        await request(`/threads/${thread.id}`, {method: 'DELETE'});
+        deleted.add(thread.id);
+        threads = threads.filter(item => item.id !== thread.id);
+        if (active.id === thread.id) { active = newThread(); browsing = true; questionBox.value = ''; }
+        persistHistory();
+        renderChat();
+        showHistory();
+      } catch (error) {
+        remove.disabled = false;
+        showStatus('history-status', `删除失败：${error.message}`);
+      }
+    });
+    remove.setAttribute('aria-label', `删除对话：${thread.messages[0]?.text?.slice(0, 40) || '商品问答'}`);
+    entry.append(option, remove);
+    list.append(entry);
   }
-  byId('history-dialog').showModal();
+  if (!byId('history-dialog').open) byId('history-dialog').showModal();
 }
 
 function remoteDialog(busy, message = '') {
@@ -420,6 +455,16 @@ byId('connection-button').addEventListener('click', () => {
   byId('connection-dialog').showModal();
 });
 byId('history-button').addEventListener('click', showHistory);
+window.addEventListener('storage', (event) => {
+  if (event.key !== deletedKey) return;
+  try {
+    for (const id of JSON.parse(event.newValue || '[]')) deleted.add(id);
+    threads = threads.filter(thread => !deleted.has(thread.id));
+    if (!busy && deleted.has(active.id)) { active = newThread(); browsing = true; questionBox.value = ''; }
+    renderChat();
+    if (byId('history-dialog').open) showHistory();
+  } catch { /* Ignore malformed external storage updates. */ }
+});
 byId('new-chat').addEventListener('click', startThread);
 byId('browse-button').addEventListener('click', () => {
   browsing = !browsing || !active.messages.length;
@@ -451,11 +496,13 @@ async function initialize() {
     const [connection, saved] = await Promise.all([request('/remote/status'), request('/threads')]);
     remote = connection.session_id ? {id: connection.session_id} : null;
     if (remote && !active.messages.length) active.mode = 'kaggle';
-    const merged = new Map(threads.map(thread => [thread.id, thread]));
+    for (const id of saved.deleted || []) deleted.add(id);
+    const merged = new Map(threads.filter(thread => !deleted.has(thread.id)).map(thread => [thread.id, thread]));
     for (const thread of saved.items) {
-      if ((merged.get(thread.id)?.updated || 0) <= thread.updated) merged.set(thread.id, thread);
+      if (!deleted.has(thread.id) && (merged.get(thread.id)?.updated || 0) <= thread.updated) merged.set(thread.id, thread);
     }
     threads = [...merged.values()].sort((a, b) => b.updated - a.updated);
+    persistHistory();
     const health = await request('/health');
     ready = health.status === 'ready';
     if (!ready) {

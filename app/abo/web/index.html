@@ -25,7 +25,7 @@
   <main class="layout">
     <div class="workspace">
       <div class="section-head"><div><span class="section-dot"></span><h1>商品问答</h1></div><button class="outline new-chat" type="button" id="new-chat"><span aria-hidden="true">+</span> 新对话</button></div>
-      <section id="welcome" aria-labelledby="welcome-title">
+      <section id="welcome" tabindex="0" aria-labelledby="welcome-title">
         <div class="hero">
           <div class="hero-copy">
             <div class="hero-tag"><span></span> ABO 历史商品目录</div>
@@ -46,7 +46,7 @@
             <label class="sr-only" for="filter-categories">搜索类目</label>
             <input id="filter-categories" type="search" placeholder="搜索类目，如手表" autocomplete="off">
           </div>
-          <div id="browse-scroll" class="browse-scroll" tabindex="0" aria-labelledby="browse-title">
+          <div id="browse-scroll" class="browse-scroll" aria-labelledby="browse-title">
             <div id="browse-grid" class="browse-grid"></div>
             <p id="browse-status" class="browse-status" role="status">正在读取目录…</p>
             <button id="browse-more" class="outline browse-more" type="button" hidden>加载更多</button>
@@ -88,6 +88,7 @@
 
   <dialog id="history-dialog" aria-labelledby="history-title">
     <div class="dialog-head"><h2 id="history-title">对话记录</h2><button class="close-dialog" data-close type="button" aria-label="关闭对话记录">×</button></div>
+    <p id="history-status" role="status" hidden></p>
     <div id="history-list"></div>
   </dialog>
   <dialog class="product-dialog" id="product-dialog" aria-labelledby="product-title">

@@ -32,9 +32,45 @@ class ResumeTests(unittest.TestCase):
         from app.abo.state import ThreadStore
 
         store = ThreadStore(self.root / "threads")
-        with patch("app.abo.http.ThreadStore", return_value=store):
+        from app.abo.state import export_state, import_state
+
+        root = self.root
+
+        class Transport:
+            """Real catalogue state behind an isolated simulated Kaggle transport."""
+
+            def __init__(self, output, address):
+                self.chat = AboDialogue(root / uuid4().hex)
+                self.output = self.chat.output
+                self.closed = False
+                self.state = None
+
+            def respond(self, question, *, state=None, **kwargs):
+                if state:
+                    import_state(self.chat, state)
+                row = self.chat.respond(question)
+                self.state = export_state(self.chat)
+                return row
+
+            def close(self):
+                self.closed = True
+                self.chat.close()
+
+        with (
+            patch("app.abo.http.ThreadStore", return_value=store),
+            patch("app.abo.http.RemoteDialogue", Transport),
+        ):
             first, second = uuid4().hex, uuid4().hex
             with TestClient(create_abo_app()) as client:
+                session = client.post("/api/v1/remote", json={"address": "test-transport"}).json()[
+                    "session_id"
+                ]
+                original_post = client.post
+
+                def post(url, *, json):
+                    return original_post(url, json={**json, "session_id": session})
+
+                client.post = post
                 client.post(
                     "/api/v1/chat",
                     json={"question": "B07SSCD71B@amazon.com.au 的品牌是什么", "thread_id": first},
@@ -54,6 +90,11 @@ class ResumeTests(unittest.TestCase):
                 self.assertEqual(client.post("/api/v1/chat", json=payload).json(), response.json())
                 self.assertEqual(len(store.get(first)["messages"]), 4)
             with TestClient(create_abo_app()) as client:
+                session = client.post("/api/v1/remote", json={"address": "test-transport"}).json()[
+                    "session_id"
+                ]
+                original_post = client.post
+                client.post = post
                 result = client.post(
                     "/api/v1/chat", json={"question": "这款的颜色是什么", "thread_id": first}
                 )

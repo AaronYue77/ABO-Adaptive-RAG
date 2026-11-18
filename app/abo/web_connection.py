@@ -35,7 +35,10 @@ class RemoteDialogue:
             config = self.kernel.execute(
                 "__import__('json').loads((chat.output/'config.json').read_text('utf-8'))", 20
             )
-            if not config.get("dialogue_planner"):
+            if (
+                not config.get("dialogue_planner")
+                or config.get("web_dialogue_contract") != "source-identity-filter-release-v2"
+            ):
                 raise ChatConnectionError(
                     "当前 Kaggle 会话仍是旧版。请在新版 ABO Notebook 中重新启动会话并运行初始化，再连接；本机历史对话会保留。"
                 )

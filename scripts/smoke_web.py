@@ -61,52 +61,15 @@ def exercise(port):
         and "/images/original/" in detail["original_image"]
     )
 
-    def ask(question, previous=None):
-        row = get(
-            "/api/v1/chat",
-            {"question": question, "session_id": previous and previous["session_id"]},
-        )
-        print(
-            json.dumps(
-                {
-                    "question": question,
-                    "action": row["action"],
-                    "photos": len(row["products"]),
-                    "run": row["run_name"],
-                    "question_id": row["question_id"],
-                },
-                ensure_ascii=False,
-            ),
-            flush=True,
-        )
-        return row
-
-    count = ask("手表类商品有多少个？")
-    assert (
-        count["action"] == "catalog_count" and "28 条" in count["answer"] and not count["products"]
-    ), count
-    search = ask("搜索红色高跟鞋")
-    assert search["action"] == "search_results" and search["products"], search
-    followup = ask("第三款，给我看看它的属性", search)
-    assert (
-        followup["sources"] and not followup["products"] and "颜色" in followup["answer"]
-    ), followup
-    photo = ask("看看这款的图片", followup)
-    assert (
-        len(photo["products"]) == 1 and photo["products"][0]["id"] == search["products"][2]["id"]
-    ), photo
-    named_photos = ask("有哪些电风扇，给我看看图片")
-    assert named_photos["action"] == "search_results" and named_photos["products"], named_photos
-    unrelated_photos = ask("给我看看 Docker 教程的图片")
-    assert not unrelated_photos["products"], unrelated_photos
-    policy = ask("Amazon.com 的一般退货政策是什么？")
-    assert policy["sources"] and not policy["products"], policy
-    comparison = ask("B07Z6DLFQS@amazon.com和B083V9KNTS@amazon.com哪一个更贵")
-    assert comparison["action"] == "requires_tool" and not comparison["products"], comparison
-    accessory = ask("给 iPhone 8 Plus 找个手机壳")
-    assert (
-        accessory["action"] == "found" and accessory["products"] and accessory["sources"]
-    ), accessory
+    for mode in ("local", "kaggle"):
+        try:
+            get("/api/v1/chat", {"question": "推荐篮球并说明理由", "mode": mode})
+        except HTTPError as error:
+            assert error.code == 502 and "Kaggle" in error.read().decode()
+        else:
+            raise AssertionError("The web server answered without a Kaggle connection.")
+    assert get("/api/v1/remote/status")["session_id"] is None
+    assert isinstance(get("/api/v1/threads")["deleted"], list)
     try:
         get("/api/v1/remote", {"address": "https://example.com/?token=smoke-invalid-address"})
     except HTTPError as error:
@@ -114,7 +77,7 @@ def exercise(port):
     else:
         raise AssertionError("The Kaggle connector accepted a non-Kaggle domain.")
     print(
-        "Full catalogue, pagination, clickable source data and image eligibility passed.",
+        "Full catalogue, pagination, clickable source data and Kaggle-only chat passed.",
         flush=True,
     )
 

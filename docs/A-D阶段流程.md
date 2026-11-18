@@ -35,7 +35,8 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    q["完整问题、本线程需求与商品身份"] --> plan["GPU · 8B 多任务语义规划<br/>逐项考虑可用工具，保留年龄和用途"]
+    q["完整问题、本线程需求与商品身份<br/>网页输入须连接 Kaggle"] --> plan["GPU · 8B 多任务语义规划<br/>逐项考虑可用工具，保留年龄和用途"]
+    plan --> release["放宽某条件或查询可选值<br/>清除对应旧筛选，重新取证"] --> search
     plan --> route{"按依赖执行必要工具，可组合多路"}
     route -->|"问候、范围外、实时或交易请求"| plain["寒暄、说明范围或解释可用证据"]
     route -->|浏览目录| directory["运行目录分页，确认用户想查的类目"]
@@ -50,6 +51,7 @@ flowchart TD
     rank -.-> visual["本地 -Visual · VisRAG-Ret<br/>至多六个候选的原图"] --> choose
     route -->|指定商品或追问| evidence{"本轮需要的来源"}
     choose --> evidence
+    evidence -->|无本轮证据| missing["只说明本次未核实，不编造属性<br/>不据此断言全库不存在"]
     evidence -->|明确规格| fields["直接读源值与单位"]
     evidence -->|尺码或变体追问| variants["读原标题与字段，查同站点同品牌同型号"]
     evidence -->|概览、继续或完整展示| detail["复用商品身份，按源条目组织内容"]

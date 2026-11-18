@@ -14,6 +14,7 @@ COLORS = {
 MATERIALS = {
     "不锈钢": "stainless steel", "陶瓷": "ceramic|porcelain|stoneware", "玻璃": "glass",
     "木制": "wood|wooden", "纯棉": "100% cotton|pure cotton", "塑料": "plastic",
+    "羊毛": "wool|woolen|woollen", "皮革": "leather", "尼龙": "nylon", "聚酯纤维": "polyester",
 }
 HEEL_QUERY = r"高跟鞋|高跟凉鞋|\b(?:high[ -]heel(?:ed|s)?|court shoes?|dress pumps?)\b"
 HEEL_STYLE = re.compile(HEEL_QUERY+r"|\b(?:pumps?|stilettos?|escarpins?)\b|tacón alto", re.I)

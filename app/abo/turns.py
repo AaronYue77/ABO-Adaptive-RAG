@@ -28,7 +28,7 @@ search 找商品；lookup 取已选商品属性；count 真实目录数量；cat
 "第一款怎么样/为什么推荐它/他/适合孩子吗"需要 advice，focus=[1]，不要变成找新商品或仅查询字段。
 "推荐两款黑色背包，比较重量和价格"需要 search、lookup、business、advice。
 如已存在候选且只要挑一个，无需重复search。切换商品类别才新建query。focus 是最近候选的1起始序号；无明确选择时留空。
-needs 在原有需求上更新，保留年龄、用途、尺寸、颜色、预算等；更换商品类别时清除不相关条件。性别本身不能推导配色或能力。
+needs 在原有需求上更新，保留年龄、用途、尺寸、颜色、预算等；更换商品类别时清除不相关条件。用户说不限年龄、颜色都可以等时清除相应条件；询问某字段有哪些可选值时放开该字段的旧筛选，保留其他要求。不要把用户不再要求年龄当作商品适合全年龄。性别本身不能推导配色或能力。
 query 只含产品和必要款式关键词，中文译英文；不加for、年龄或男孩女孩等人群词，年龄必须输出数字放在needs，由来源核实，不可丢失。没有新搜索时沿用以前query。
 images 仅找商品、推荐展示、用户明确看图或依赖外观时true；数量、价格、政策、普通文字追问通常false。
 每个task.question 保留具体用户诉求，不编造编号、商品、年龄、标准和事实。不把"适合8岁"改成"儿童通用"。
@@ -42,6 +42,7 @@ ANSWER_PROMPT = """你是 ABO 商品顾问。直接回应用户完整需求，�
 没有证据的参数、适用年龄、安全性、认证、实时价格库存、医疗效果、商品体验不能编造。性别不能推导配色和能力。属性冲突时指出冲突。
 存在不同语种的数字差异时，不把有差异的数值作为确定推荐理由，优先解释其他一致属性。
 不要把标签扩大成绝对承诺：脱咖啡因不代表已证实零咖啡因，耐水不代表可浸水，兼容不代表随包附送，阻隔噪声不代表主动降噪。只陈述源资料明确支持的程度。
+每款名称及用途分别核对，Match不等于Training；“high-quality materials”是源文宣传措辞，不能据此确认具体材质。“Without Hand Pump”表示不附带打气筒，不能推断球不需要充气。其他品类同样区分包装配件、使用条件与商品属性。
 数值必须保留单位和对应字段，不把承重、包装重量当商品净重，不把外尺寸当内尺寸，不混用电压、功率与容量。
 age_check=conflict 的商品不能推荐给该年龄；age_check=unknown 不能声称已适龄。若找不到符合明确年龄的证据，要说明未找到能核实适龄的款式，仍可介绍已有规格和提供针对性下一步。
 "第一款可以，推荐理由"是在问这款的理由，说明源要点与需求的关系，同时如实承认适用性不足；不要机械回复无法回答。
@@ -65,6 +66,31 @@ adult_age_is_context=true时，允许依据已核实规格给成年人有条件�
 历史回答和用户愿望不能证明商品事实。已核实的count结果可以直接引用。problems用中文简要列出需纠正的事实。"""
 
 
+def released_requirements(text):
+    """User-released filters must not survive in an inherited model plan."""
+    labels = {
+        "age": "年龄|岁数",
+        "gender": "性别|男女",
+        "color": "颜色|配色",
+        "material": "材质|面料",
+        "size": "尺码|尺寸",
+    }
+    released = set()
+    for field, names in labels.items():
+        label = f"(?:{names})"
+        if re.search(
+            rf"(?:不限制?|不限|不挑|不考虑|无所谓){label}|{label}(?:不限|不限制|无所谓|不挑)|(?:什么|任何|所有){label}(?:都)?(?:可以|行|不限)|{label}(?:都|也|均)(?:可以|行)",
+            text,
+        ):
+            released.add(field)
+        if re.search(
+            rf"{label}(?:都有哪些|有哪些|有什么|可以选什么)|(?:有(?:哪些|什么)|都有哪些){label}|(?:哪些|什么){label}(?:的)?(?:可选|可以选|[？?]|$)",
+            text,
+        ):
+            released.add(field)
+    return released
+
+
 def parse_json(raw):
     value = json.loads(re.sub(r"^```(?:json)?\s*|\s*```$", "", raw.strip(), flags=re.I))
     if not isinstance(value, dict):
@@ -82,7 +108,7 @@ def complete_plan(plan, text, has_context):
     changes = []
     refinement = bool(
         re.search(r"改成|改为|换成|换为|换个|换一款|换一批|只看|重新筛选|筛选|排除|不要", text)
-    )
+    ) or bool(released_requirements(text))
     if (
         has_context
         and refinement
@@ -90,6 +116,7 @@ def complete_plan(plan, text, has_context):
         and plan.get("query")
         and (
             named_constraints(text)
+            or released_requirements(text)
             or re.search(r"换个|换一款|换一批|重新筛选|(?:改|换).{0,8}(?:用途|用来|场景)", text)
         )
     ):
@@ -213,6 +240,8 @@ def source_item(source, needs, index, question=""):
         "brand",
         "color",
         "material",
+        "fabric_type",
+        "style",
         "model_number",
         "item_dimensions",
         "item_weight",
@@ -308,6 +337,7 @@ class AdaptiveTurn:
             return None
         started, calls = perf_counter(), []
         memory = self.dialogue.turn_memory
+        previous_candidates = list(self.engine.catalog.candidates)
         context = {
             "previous_needs": memory.get("needs", {}),
             "previous_query": memory.get("query", ""),
@@ -437,12 +467,15 @@ class AdaptiveTurn:
         ):
             plan["tasks"] = [task for task in plan["tasks"] if task["tool"] != "search"]
         needs = {**(memory.get("needs") or {}), **plan["needs"]}
+        released = released_requirements(text)
+        for field in released & {"age", "gender"}:
+            needs[field] = None if field == "age" else ""
         keep_requirements = bool(
             re.search(r"其他.*(?:保持|不变)|保持.*(?:条件|用途)|再来|下一批|更多", text)
         )
         if keep_requirements:
             for field, value in (memory.get("needs") or {}).items():
-                if value and not needs.get(field):
+                if value and not needs.get(field) and field not in released:
                     needs[field] = value
         needs["gender"] = str(needs.get("gender") or "")
         for field in ("purpose", "constraints"):
@@ -451,6 +484,22 @@ class AdaptiveTurn:
                 str(item)[:300] for item in (value if isinstance(value, list) else [value])[:12]
             ]
         plan["needs"] = needs
+        if released:
+            # Remove only the released dimension; retain unrelated explicit requirements.
+            from catalog_constraints import COLORS, MATERIALS
+
+            terms = {
+                "color": list(COLORS),
+                "material": list(MATERIALS),
+                "age": ["岁", "年龄"],
+                "gender": ["男孩", "女孩", "男士", "女士"],
+                "size": ["尺码", "码"],
+            }
+            needs["constraints"] = [
+                value
+                for value in needs["constraints"]
+                if not any(term in value for field in released for term in terms[field])
+            ]
         if isinstance(needs.get("age"), str):
             match = re.fullmatch(r"\s*(\d{1,3})(?:\s*岁)?\s*", needs["age"])
             needs["age"] = int(match[1]) if match else None
@@ -484,6 +533,20 @@ class AdaptiveTurn:
             )
         tasks = plan["tasks"]
         tools = [task["tool"] for task in tasks]
+        if previous_candidates and not protected_scope and "search" not in tools:
+            from full_reference import ORDINAL, ordinal_choice, ordinal_index
+
+            references = [ordinal_index(match[1]) + 1 for match in ORDINAL.finditer(text)]
+            bare = ordinal_choice(text, {"lane": "product"})
+            if not references and bare and not bare.get("ambiguous"):
+                references = [bare["index"] + 1]
+            if references:
+                if any(index < 1 or index > len(previous_candidates) for index in references):
+                    row = self.delegate(text, child=True)
+                    row["task_plan"] = plan
+                    self.save_delegated(row, text, started)
+                    return row
+                plan["focus"] = list(dict.fromkeys(references))
         if "search" not in tools:
             self.select_focus(plan["focus"])
         # Atomic source tools stay independently auditable. The planner can choose several of them.
@@ -527,6 +590,9 @@ class AdaptiveTurn:
                         constrained=True,
                     )["criteria"]
                     criteria = {**original_criteria, **criteria}
+                    for field in released:
+                        criteria.pop(field, None)
+                        criteria.pop("exclude_" + field, None)
                     prior = memory.get("search_contexts", [])
                     if keep_requirements and len(prior) == 1 and query == memory.get("query"):
                         old = dict(prior[0]["criteria"])
@@ -541,6 +607,9 @@ class AdaptiveTurn:
                             if "exclude_" + key in criteria and key not in criteria:
                                 old.pop(key, None)
                         criteria = {**old, **criteria}
+                    for field in released:
+                        criteria.pop(field, None)
+                        criteria.pop("exclude_" + field, None)
                     effective = task.get("query") or (
                         native["query"]
                         if not native["needs_semantic_translation"]
@@ -605,6 +674,8 @@ class AdaptiveTurn:
                     **needs,
                     **(task.get("needs") if isinstance(task.get("needs"), dict) else {}),
                 }
+                for field in released & {"age", "gender"}:
+                    local_needs[field] = needs[field]
                 pool.sort(
                     key=lambda source: {
                         "supported": 0,
@@ -767,6 +838,9 @@ class AdaptiveTurn:
             source_item(source, source.get("task_needs", needs), index, text)
             for index, source in enumerate(sources, 1)
         ]
+        for fact in facts:
+            if "search" not in tools and fact["listing_key"] in previous_candidates:
+                fact["candidate_number"] = previous_candidates.index(fact["listing_key"]) + 1
         model_context = {
             "question": text,
             "user_context": {
@@ -827,17 +901,27 @@ class AdaptiveTurn:
             )
         guard_error = None
         try:
-            obj = parse_json(
-                self.engine.app.conversation.generate(
-                    [
-                        {"role": "system", "content": answer_prompt},
-                        {"role": "user", "content": json.dumps(model_context, ensure_ascii=False)},
-                    ],
-                    "adaptive_grounded_answer",
-                    calls,
-                    550,
+            if not facts and not any(part.get("citations") for part in parts):
+                obj = {
+                    "answer": "这次检索没有找到能核实你当前条件的商品资料。可以放宽其中一个条件，或换个商品名称继续查；这不表示整个目录中一定没有这类商品。",
+                    "citations": [],
+                    "recommended": [],
+                }
+            else:
+                obj = parse_json(
+                    self.engine.app.conversation.generate(
+                        [
+                            {"role": "system", "content": answer_prompt},
+                            {
+                                "role": "user",
+                                "content": json.dumps(model_context, ensure_ascii=False),
+                            },
+                        ],
+                        "adaptive_grounded_answer",
+                        calls,
+                        550,
+                    )
                 )
-            )
             answer, cited, recommended = obj["answer"], obj["citations"], obj["recommended"]
             source_by_id = {source["id"]: source for source in facts}
             by_key = {source["listing_key"]: source for source in facts}
@@ -869,15 +953,22 @@ class AdaptiveTurn:
                 "adult_age_is_context": conditional_age,
                 "verified_tool_answers": model_context["verified_tool_answers"],
             }
-            review = parse_json(
-                self.engine.app.conversation.generate(
-                    [
-                        {"role": "system", "content": REVIEW_PROMPT},
-                        {"role": "user", "content": json.dumps(review_context, ensure_ascii=False)},
-                    ],
-                    "adaptive_evidence_review",
-                    calls,
-                    224,
+            review = (
+                {"supported": True}
+                if not facts and not any(part.get("citations") for part in parts)
+                else parse_json(
+                    self.engine.app.conversation.generate(
+                        [
+                            {"role": "system", "content": REVIEW_PROMPT},
+                            {
+                                "role": "user",
+                                "content": json.dumps(review_context, ensure_ascii=False),
+                            },
+                        ],
+                        "adaptive_evidence_review",
+                        calls,
+                        224,
+                    )
                 )
             )
             if review.get("supported") is not True:
@@ -972,7 +1063,9 @@ class AdaptiveTurn:
                     )
                 else:
                     answer += "这些是目前能核实的选择依据，尚未收录的适用条件还需确认。"
-            if needs.get("age") is not None:
+            if not facts and not any(part.get("citations") for part in parts):
+                answer = "这次检索没有找到能核实你当前条件的商品资料。可以放宽其中一个条件，或换个商品名称继续查；这不表示整个目录中一定没有这类商品。"
+            elif needs.get("age") is not None:
                 answer = (
                     f"你要给{needs['age']}岁的人选商品，当前资料不足以确认这些候选的适龄条件。\n"
                     + answer
@@ -985,7 +1078,11 @@ class AdaptiveTurn:
         ordinals = ["第一款", "第二款", "第三款", "第四款", "第五款"]
         labels = {
             source["id"]: (
-                ordinals[display_order.index(source["listing_key"])]
+                (
+                    f"第{source['candidate_number']}款"
+                    if source.get("candidate_number")
+                    else ordinals[display_order.index(source["listing_key"])]
+                )
                 if source["listing_key"] in display_order
                 and display_order.index(source["listing_key"]) < 5
                 else readable_text(source["title"])
@@ -1124,6 +1221,9 @@ class AdaptiveTurn:
             "source_sha256": self.engine.source_sha,
             "config_sha256": self.engine.config_sha,
             "citations": list(dict.fromkeys(citations)),
+            "candidate_positions": {
+                key: index for index, key in enumerate(self.engine.catalog.candidates, 1)
+            },
             "retrieved_pages": pages,
             "catalog_items": [public_item(source) for source in display_sources],
             "model_calls": calls,
@@ -1214,6 +1314,9 @@ class AdaptiveTurn:
         from common import WORKSPACE
 
         row["question"] = question
+        row["candidate_positions"] = {
+            key: index for index, key in enumerate(self.engine.catalog.candidates, 1)
+        }
         row["run_name"] = self.engine.output.name
         row["run_directory"] = str(self.engine.output.relative_to(WORKSPACE))
         row["total_seconds"] = perf_counter() - started

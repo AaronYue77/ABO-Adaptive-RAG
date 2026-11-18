@@ -5,6 +5,7 @@ import re
 from copy import deepcopy
 from pathlib import Path
 from threading import RLock
+from time import time
 
 CATALOG_FIELDS = (
     "selected",
@@ -123,3 +124,15 @@ class ThreadStore:
                         {key: item.get(key) for key in ("id", "mode", "updated", "messages")}
                     )
         return sorted(rows, key=lambda row: row.get("updated") or 0, reverse=True)
+
+    def deleted(self):
+        with self.lock:
+            return [
+                path.stem
+                for path in self.root.glob("*.json")
+                if json.loads(path.read_text("utf-8")).get("deleted")
+            ]
+
+    def delete(self, identity):
+        # Retain only an identity tombstone, preventing stale browser copies from resurrecting it.
+        self.save(identity, {"id": identity, "deleted": True, "updated": int(time() * 1000)})

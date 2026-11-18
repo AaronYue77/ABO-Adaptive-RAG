@@ -15,8 +15,8 @@ from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, SecretStr
 
-from app.abo.service import AboDialogue, bind_runtime
-from app.abo.state import ThreadStore, export_state, import_state
+from app.abo.service import bind_runtime
+from app.abo.state import ThreadStore
 from app.abo.web_catalog import WebCatalog
 from app.abo.web_connection import ChatConnectionError, RemoteDialogue
 from app.abo.web_setup import catalog_ready
@@ -30,14 +30,14 @@ class ChatRequest(BaseModel):
     thread_id: str | None = Field(default=None, pattern=r"^[a-f0-9]{32}$")
     request_id: str | None = Field(default=None, pattern=r"^[a-f0-9]{32}$")
     history: list[dict] = Field(default_factory=list, max_length=10000)
-    mode: Literal["local", "kaggle"] = "local"
+    mode: Literal["local", "kaggle"] = "kaggle"
 
 
 class RemoteRequest(BaseModel):
     address: SecretStr
 
 
-def web_sources(row):
+def web_sources(row, catalog=None):
     pages = {
         page["page_id"]: page for page in row.get("retrieved_pages", []) if page.get("page_id")
     }
@@ -53,9 +53,12 @@ def web_sources(row):
         page = pages.get(citation, {})
         origin = page.get("source")
         origin = origin if isinstance(origin, dict) else {}
+        identity = catalog.source_identity(citation) if catalog else {}
         sources.append(
             {
                 **source,
+                **identity,
+                "choice": row.get("candidate_positions", {}).get(citation.split(":")[0]),
                 "excerpt": " / ".join(claims.get(citation, []))[:650]
                 or str(page.get("text") or "")[:650],
                 "url": page.get("source_url"),
@@ -64,6 +67,8 @@ def web_sources(row):
                 "line": origin.get("line"),
             }
         )
+        if identity:
+            sources[-1]["excerpt"] = identity["excerpt"]
     return sources
 
 
@@ -183,7 +188,35 @@ def create_abo_app():
 
     @app.get("/api/v1/threads")
     def thread_history():
-        return {"items": store.history()}
+        items = store.history()
+        if catalog_ready(catalog):
+            for thread in items:
+                for message in thread["messages"]:
+                    for source in message.get("sources", []):
+                        source.update(browser_catalog.source_identity(source.get("citation", "")))
+        return {"items": items, "deleted": store.deleted()}
+
+    @app.delete("/api/v1/threads/{identity}", status_code=204, response_class=Response)
+    def delete_thread(identity: str):
+        try:
+            store.path(identity)
+        except ValueError:
+            raise HTTPException(422, "无效的对话编号。") from None
+        with lock:
+            conversation_lock = thread_locks.setdefault(identity, RLock())
+        with conversation_lock:
+            existed = not store.get(identity).get("deleted")
+            store.delete(identity)
+            if existed:
+                from common import operation
+
+                operation(
+                    "删除网页历史会话",
+                    "删除消息和恢复状态，保留无正文删除标记及独立审计日志",
+                    "历史删除完成；Kaggle连接不受影响",
+                    outputs=[str(store.path(identity))],
+                    verification="旧请求返回410，其他对话不受影响",
+                )
 
     @app.delete("/api/v1/chat/{session_id}", status_code=204, response_class=Response)
     def close_session(session_id: str):
@@ -204,52 +237,26 @@ def create_abo_app():
 
     def respond(body, identity):
         previous = store.get(identity)
+        if previous.get("deleted"):
+            raise HTTPException(410, "这段对话已删除，请开始新对话。")
         if body.request_id and previous.get("request_id") == body.request_id:
             return previous["reply"]
         with lock:
             key = body.session_id or identity
             remote = isinstance(sessions.get(key), RemoteDialogue)
-            if body.mode == "kaggle" and not remote:
+            if not remote or body.mode != "kaggle":
                 raise HTTPException(
                     502, "请重新连接正在运行的 Kaggle 会话。历史对话和商品选择仍已保存。"
                 )
-            if not remote and body.thread_id:
-                key = identity
-            if key not in sessions:
-                if body.session_id and not body.thread_id and not previous:
-                    raise HTTPException(404, "会话已失效，请重新连接。历史内容仍已保存。")
-                require_catalog()
-                if len(sessions) >= 32:
-                    old = next(
-                        (old for old, value in sessions.items() if isinstance(value, AboDialogue)),
-                        None,
-                    )
-                    if old is None:
-                        raise HTTPException(503, "当前正在处理其他会话，请稍后重试。")
-                    sessions.pop(old).close()
-                output = workspace / "reports/ecommerce_rag" / ("abo-adaptive-api-" + key)
-                if output.exists():
-                    output = output.with_name(output.name + "-" + uuid4().hex[:8])
-                output.mkdir(parents=True)
-                sessions[key] = AboDialogue(
-                    output, gpu=os.environ.get("ABO_GPU") == "1", entry="HTTP"
-                )
-                import_state(sessions[key], previous.get("state"))
             session = sessions[key]
         state = previous.get("state")
         if not state and body.history:
             state = legacy_context(body.history)
         try:
-            if isinstance(session, RemoteDialogue):
-                row = session.respond(
-                    body.question, thread_id=identity, request_id=body.request_id, state=state
-                )
-                state = session.state
-            else:
-                if state:
-                    import_state(session, state)
-                row = session.respond(body.question)
-                state = export_state(session)
+            row = session.respond(
+                body.question, thread_id=identity, request_id=body.request_id, state=state
+            )
+            state = session.state
         except ChatConnectionError as error:
             raise HTTPException(502, str(error)) from None
         if row["decision"] == "exit":
@@ -261,7 +268,9 @@ def create_abo_app():
             "answer": row["display_answer"],
             "action": row["decision"],
             "products": products,
-            "sources": web_sources(row),
+            "sources": web_sources(row, browser_catalog)
+            if catalog_ready(catalog)
+            else web_sources(row),
             "citations": row["citations"],
             "strategy": row["adaptive"]["strategy"],
             "run_name": session.output.name,
@@ -282,7 +291,7 @@ def create_abo_app():
             identity,
             {
                 "id": identity,
-                "mode": "kaggle" if isinstance(session, RemoteDialogue) else "local",
+                "mode": "kaggle",
                 "state": state,
                 "messages": messages,
                 "updated": int(time() * 1000),

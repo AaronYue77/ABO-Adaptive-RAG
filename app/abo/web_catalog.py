@@ -117,6 +117,23 @@ class WebCatalog:
             "line": row["source_line"],
         }
 
+    def source_identity(self, citation):
+        if not citation.endswith(":metadata") or "@" not in citation:
+            return {}
+        key = citation.removesuffix(":metadata")
+        with self.connect() as db:
+            row = db.execute("SELECT id FROM products WHERE listing_key=?", (key,)).fetchone()
+        detail = self.details(row["id"]) if row else None
+        if not detail:
+            return {}
+        return {
+            "label": detail["title"] + " · " + detail["site"],
+            "product_id": detail["id"],
+            "excerpt": "；".join(item["label"] + "：" + item["value"] for item in detail["fields"])[
+                :650
+            ],
+        }
+
     def chat_cards(self, row):
         """Attach only products backed by the current turn, never by chat prose."""
         action = row["decision"]
@@ -154,6 +171,7 @@ class WebCatalog:
                 WHERE p.listing_key IN ({marks})""",
                     keys,
                 )
-                if item["path"]
             }
-        return [by_key[key] for key in keys if key in by_key]
+        return [
+            {**by_key[key], "choice": index} for index, key in enumerate(keys, 1) if key in by_key
+        ]
