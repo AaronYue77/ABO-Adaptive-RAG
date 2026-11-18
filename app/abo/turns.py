@@ -415,7 +415,7 @@ class AdaptiveTurn:
                 plan["tasks"] = [{"tool": "catalog", "question": text}]
         if (
             exact_skus(text)
-            and any(task["tool"] == "compatibility" for task in plan["tasks"])
+            and any(task["tool"] in {"compatibility", "lookup"} for task in plan["tasks"])
             and not re.search(r"再找|顺便找|其他|别的|类似|替代|换一款", text)
         ):
             plan["tasks"] = [task for task in plan["tasks"] if task["tool"] != "search"]
