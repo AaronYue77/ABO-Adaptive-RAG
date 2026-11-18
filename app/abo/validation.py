@@ -117,6 +117,8 @@ def run_validation(session, result_path, *, require=False):
                     "evidence": row["citations"],
                     "passed": passed,
                     "answer": text,
+                    "error": row.get("error"),
+                    "listing_keys": row.get("current_listing_keys_after", []),
                 }
             )
     summary = {

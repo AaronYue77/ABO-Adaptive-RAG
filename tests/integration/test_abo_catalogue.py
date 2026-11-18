@@ -1,6 +1,7 @@
 """Run the source-backed shopping acceptance suites in ordinary CPU CI."""
 
 import json
+import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -44,7 +45,9 @@ def dialogue():
 )
 def test_shopping_followups_keep_their_source_and_scope(dialogue, runner, expected):
     session, root = dialogue
-    report = root / "acceptance.json"
+    report_dir = Path(os.environ.get("ABO_CI_REPORTS", root))
+    report_dir.mkdir(parents=True, exist_ok=True)
+    report = report_dir / f"{runner.__name__}.json"
     result = runner(session, report)
     failures = [check for check in result["checks"] if not check["passed"]]
     assert result["cases"] == result["passed"] == expected, json.dumps(
@@ -55,6 +58,8 @@ def test_shopping_followups_keep_their_source_and_scope(dialogue, runner, expect
 
 def test_every_category_preserves_complete_source_fields(dialogue):
     session, root = dialogue
-    result = run_category_validation(session, root / "categories.json")
+    report_dir = Path(os.environ.get("ABO_CI_REPORTS", root))
+    report_dir.mkdir(parents=True, exist_ok=True)
+    result = run_category_validation(session, report_dir / "categories.json")
     assert result["categories"] == result["passed"] == 576
     assert len({check["category"] for check in result["checks"]}) == 576

@@ -19,6 +19,8 @@ jobs:
     name: ruff + mypy + pytest (py${{ matrix.python-version }})
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    env:
+      ABO_CI_REPORTS: abo_runtime/reports/ci
     strategy:
       fail-fast: false
       matrix:
@@ -60,4 +62,14 @@ jobs:
           uv run --locked python -m pytest -q
           --cov=app --cov=eval
           --cov-report=term:skip-covered
+          --cov-report=xml:abo_runtime/reports/ci/coverage.xml
+          --junitxml=abo_runtime/reports/ci/pytest.xml
           --cov-fail-under=70
+
+      - name: Preserve test and source acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-python-${{ matrix.python-version }}
+          path: abo_runtime/reports/ci
+          if-no-files-found: ignore

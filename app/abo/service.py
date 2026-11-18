@@ -14,6 +14,9 @@ from app.core.enums import RetrievalStrategy
 def bind_runtime():
     default = Path(__file__).resolve().parents[2] / "abo_runtime"
     workspace = Path(os.environ.setdefault("DOC_VQA_WORKSPACE", str(default)))
+    font = workspace / "fonts/NotoSansSC.ttf"
+    if font.is_file():
+        os.environ.setdefault("ABO_FONT_PATH", str(font))
     upstream = workspace / "upstream/VisRAG/personal"
     for name in ("ecommerce_rag", "rag_common", "visrag_repro"):
         path = str(upstream / name)
