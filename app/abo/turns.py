@@ -670,7 +670,7 @@ class AdaptiveTurn:
             self.engine.catalog.selected, self.engine.catalog.selected_entities = [], []
             self.engine.catalog.last_lane = self.engine.last_lane = "product"
         focused = self.select_focus(plan["focus"])
-        if not sources:
+        if not sources and "compatibility" not in tools:
             identities = focused or self.engine.catalog.selected or self.engine.catalog.candidates
             state = self.engine.device_state or {}
             if not focused and self.engine.last_lane == "compatibility":
@@ -679,11 +679,26 @@ class AdaptiveTurn:
                     if state.get("sku") and state.get("domain")
                     else state.get("candidates")
                 ) or identities
-            for key in identities[:14]:
-                sources.extend(self.engine.app.retriever.get(*key.split("@", 1)))
+            explicit = exact_skus(text)
+            if explicit:
+                for sku in explicit:
+                    matched = re.search(re.escape(sku) + r"@([a-z0-9./-]+)", text, re.I)
+                    rows = self.engine.app.retriever.get(
+                        sku, matched[1].rstrip(".。") if matched else None
+                    )
+                    if len(rows) == 1:
+                        sources.extend(rows)
+            else:
+                for key in identities[:14]:
+                    sources.extend(self.engine.app.retriever.get(*key.split("@", 1)))
         for task in tasks:
             if task["tool"] in {"search", "advice"}:
                 continue
+            if task["tool"] == "lookup" and "compatibility" in tools:
+                from full_evidence import requested_fields
+
+                if not requested_fields(text):
+                    continue
             if task["tool"] == "visual":
                 if any(part.get("visual_observation") for part in parts):
                     continue
@@ -701,7 +716,7 @@ class AdaptiveTurn:
             not sources
             and len(parts) == 1
             and parts[0].get("entry_lane") == "compatibility"
-            and set(tools) <= {"compatibility", "visual", "advice"}
+            and set(tools) <= {"compatibility", "visual", "advice", "lookup"}
         ):
             row = dict(parts[0])
             row["model_calls"] = calls
@@ -758,7 +773,7 @@ class AdaptiveTurn:
         answer_prompt = ANSWER_PROMPT
         answer_prompt += (
             "\nage_check=not_requested只表示本轮未要求年龄，不能据此宣称没有年龄限制。"
-            "照片由网页商品卡展示，不能声称没有图片或要求用户自行搜索。"
+            "图片展示已由界面完成；用户可以点击本轮商品卡查看原图和属性。"
             "输出正文不要含E1等内部证据标签；只在citations填这些编号。"
             "价格和库存未提供不会阻止基于规格的有条件建议，单独说明价格未收录即可。"
             "先写具体款的可核实选择依据，不用价格缺失结束整段回答。"
@@ -947,6 +962,18 @@ class AdaptiveTurn:
             lambda match: labels.get(match.group(), ""),
             answer,
         )
+        answer = re.sub(
+            r"[^。！？\n]*(?:不能声称|不要输出|输出正文|只在citations|要求用户自行搜索)[^。！？\n]*[。！？]?",
+            "",
+            answer,
+        ).strip()
+        if bool(re.search(r"图片|照片|外观", text)) and sources:
+            answer = re.sub(
+                r"[^。！？\n]*(?:图片无法|无法提供图片|不能提供图片|图片由网页商品卡)[^。！？\n]*[。！？]?",
+                "",
+                answer,
+            ).strip()
+            answer += " 图片可点击商品卡查看，也可以在卡片中打开属性。"
         if re.search(
             r"\bdecaf(?:feinated)?\b", json.dumps(facts, ensure_ascii=False), re.I
         ) and re.search(r"不含咖啡因|零咖啡因|完全无咖啡因", answer):
@@ -1032,7 +1059,7 @@ class AdaptiveTurn:
         decision = "search_results" if "search" in tools else "answer"
         if "search" in tools and not sources:
             decision = "partial" if any(part.get("citations") for part in parts) else "not_found"
-        if compatibility_parts and set(tools) <= {"compatibility", "visual", "advice"}:
+        if compatibility_parts and set(tools) <= {"compatibility", "visual", "advice", "lookup"}:
             decision = compatibility_parts[-1]["decision"]
         elif (sources or any(part.get("citations") for part in parts)) and any(
             part["decision"] in {"requires_tool", "not_found", "partial"} for part in parts

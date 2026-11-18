@@ -181,6 +181,34 @@ class ResumeTests(unittest.TestCase):
                 "black" in original.casefold() or "黑色" in original, item["listing_key"]
             )
 
+    def test_compatibility_after_search_does_not_cite_prior_candidates(self):
+        chat = AboDialogue(self.root / "change-explicit-product")
+        self.addCleanup(chat.close)
+        chat.respond("有哪些电风扇，给我看看图片")
+        stale = set(chat.engine.catalog.candidates)
+        self.assertTrue(stale)
+        chat.app.model_available = True
+        plan = {
+            "tasks": [
+                {"tool": "compatibility", "question": "B07T9TLVJ3能配 iPhone 8 Plus 吗？"},
+                {"tool": "lookup", "question": "查看这款的兼容描述"},
+            ],
+            "query": "phone case",
+            "needs": {},
+            "focus": [],
+            "images": False,
+        }
+        with patch.object(
+            chat.app.conversation, "generate", return_value=json.dumps(plan, ensure_ascii=False)
+        ):
+            row = chat.respond("B07T9TLVJ3能配 iPhone 8 Plus 吗？")
+        self.assertEqual(row["decision"], "compatible")
+        self.assertTrue(row["citations"])
+        self.assertTrue(
+            all(not any(key in citation for key in stale) for citation in row["citations"])
+        )
+        self.assertNotIn("ELECTRIC_FAN", json.dumps(row.get("requirement_checks", [])))
+
     def test_grounding_keeps_measurement_units_and_normalized_units(self):
         from full_retrieval import FullRetriever
 

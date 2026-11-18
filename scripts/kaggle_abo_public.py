@@ -99,6 +99,20 @@ def initialize(workspace, event):
 
 
 def verify(chat):
+    """Preserve both successful and failed cloud acceptance artifacts."""
+    try:
+        return verify_checks(chat)
+    finally:
+        output=Path('/kaggle/working')
+        if output.is_dir():
+            from zipfile import ZIP_DEFLATED
+            archive=output/('abo-session-'+chat.output.name+'.zip')
+            with ZipFile(archive,'w',compression=ZIP_DEFLATED) as package:
+                for path in chat.output.rglob('*'):
+                    if path.is_file():package.write(path,path.relative_to(chat.output))
+
+
+def verify_checks(chat):
     """Check real GPU calls and the browser-readable response using public demo questions."""
     from common import write_json
     import torch
@@ -118,6 +132,7 @@ def verify(chat):
                   'visual_observation':bool(row.get('visual_observation')),
                   'citations':row['citations'], 'issue_id':row.get('issue_id')}
         checks.append(result)
+        write_json(chat.output/'public-demo-verify-progress.json',{'checks':checks,'completed':False})
         print(json.dumps(result, ensure_ascii=False), flush=True)
         assert result['action'] == expected and not result['issue_id'], result
         if expected in {'chat', 'compatible'}:
