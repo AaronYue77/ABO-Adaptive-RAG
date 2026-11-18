@@ -1,5 +1,6 @@
 """Run the source-backed shopping acceptance suites in ordinary CPU CI."""
 
+import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -45,7 +46,10 @@ def test_shopping_followups_keep_their_source_and_scope(dialogue, runner, expect
     session, root = dialogue
     report = root / "acceptance.json"
     result = runner(session, report)
-    assert result["cases"] == result["passed"] == expected, result["checks"]
+    failures = [check for check in result["checks"] if not check["passed"]]
+    assert result["cases"] == result["passed"] == expected, json.dumps(
+        failures, ensure_ascii=False, indent=2
+    )
     assert report.is_file()
 
 
