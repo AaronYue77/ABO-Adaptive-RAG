@@ -541,7 +541,11 @@ class AdaptiveTurn:
                             if "exclude_" + key in criteria and key not in criteria:
                                 old.pop(key, None)
                         criteria = {**old, **criteria}
-                    effective = task.get("query") or query or native["query"]
+                    effective = task.get("query") or (
+                        native["query"]
+                        if not native["needs_semantic_translation"]
+                        else query or native["query"]
+                    )
                     if needs.get("purpose") or (needs.get("constraints") and not criteria):
                         query_prompt = (
                             '将当前商品需求改写为最多6个英文检索关键词，只输出JSON {"query":"..."}。'
@@ -745,6 +749,14 @@ class AdaptiveTurn:
             self.remember(text, row["display_answer"], query, needs)
             self.save_delegated(row, text, started)
             return row
+        known = {source["listing_key"] for source in sources}
+        for part in parts:
+            for item in part.get("catalog_items", []) + part.get("matches", []):
+                identity = item.get("listing_key") or item.get("listing")
+                if identity and "@" in identity and identity not in known:
+                    for source in self.engine.app.retriever.get(*identity.split("@", 1)):
+                        sources.append(source)
+                        known.add(identity)
         facts = [
             source_item(source, source.get("task_needs", needs), index, text)
             for index, source in enumerate(sources, 1)

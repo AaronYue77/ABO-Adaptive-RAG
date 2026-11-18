@@ -255,7 +255,7 @@ class ResumeTests(unittest.TestCase):
                             {"tool": "count", "question": "手表类商品有多少个？"},
                             {"tool": "search", "question": "找几款电风扇"},
                         ],
-                        "query": "electric fan",
+                        "query": "watch",
                         "needs": {"age": None},
                         "focus": [],
                         "images": True,
