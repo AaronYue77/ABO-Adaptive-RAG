@@ -191,9 +191,15 @@ def write_notebook(kernel, online=False):
     release = dict(id=f"aaronyue77/{SLUG}",title=TITLE,code_file=f"{SLUG}.ipynb",language="python",
                    kernel_type="notebook",is_private=True,enable_gpu=True,enable_internet=online,keywords=["gpu"],
                    dataset_sources=[FIXTURE],model_sources=["qwen-lm/qwen-3-vl/Transformers/8b-instruct/1"])
+    public=ROOT/'scripts/kaggle_abo_public.ipynb'
+    if public.is_file():
+        # Both published entrypoints run the same pinned, independently downloadable runtime.
+        release.update(enable_internet=True,dataset_sources=[])
+        data=public.read_text('utf-8')
+    else:
+        overlay=source_overlay() if online else None
+        data=json.dumps(notebook(online,overlay),ensure_ascii=False,indent=2)+"\n"
     (kernel/"kernel-metadata.json").write_text(json.dumps(release,indent=2)+"\n","utf-8")
-    overlay=source_overlay() if online else None
-    data=json.dumps(notebook(online,overlay),ensure_ascii=False,indent=2)+"\n"
     (kernel/f"{SLUG}.ipynb").write_text(data,"utf-8")
     (ROOT/"scripts/kaggle_abo.ipynb").write_text(data,"utf-8")
 

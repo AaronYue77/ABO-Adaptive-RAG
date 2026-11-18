@@ -15,6 +15,8 @@
 
 已有 [私有 Notebook v7](https://www.kaggle.com/code/aaronyue77/abo-adaptive-rag-product-assistant-8b) 使用私有夹具并完成 L4 保存运行。新增购物对话回归 34/34，涵盖类目与站点统计、搜索后调整条件、尺码与变体核对、规格和实时库存的混合请求。原跨类目回归 49/49，类目商品追问 576/576，字段与引用抽查 1,089/1,089。
 
+新版主 Notebook 和公开体验 Notebook 使用相同的固定代码与公开资产初始化。已有私有夹具和历史版本保留用于原冻结回归，当前体验启动不依赖重传该大包。原图文C适配器和新对话适配器分别校验、分别按任务使用。
+
 ## 云端微调与发布
 
 正式适配器已在 Kaggle T4 上用 `transformers`、`peft`、`bitsandbytes` 完成 4-bit NF4 QLoRA。冻结训练 120 题，独立开发 50 题，共 60 次优化器更新，训练峰值 10.24 GiB。阶段代码使用相同的 Qwen3-VL-8B-Instruct 底座和可追溯的商品图文证据。
