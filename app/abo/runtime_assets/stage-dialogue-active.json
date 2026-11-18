@@ -1,0 +1,22 @@
+{
+  "release": "qwen3-vl-8b-abo-dialogue-v1",
+  "directory": "models/qwen3-vl-8b-abo-dialogue-v1",
+  "archive": "qwen3-vl-8b-abo-dialogue-v1.zip",
+  "url": "https://github.com/AaronYue77/ABO-Adaptive-RAG/releases/download/qwen3-vl-8b-abo-dialogue-v1/qwen3-vl-8b-abo-dialogue-v1.zip",
+  "adapter_sha256": "e9b829d47f3a4fdcc769c1949d6a5a9a5ac161b64a740e70ee1f09f4956a3fbf",
+  "adapter_config_sha256": "83943167de92619e0585a45097dd3e3461e7465efdb629e2a59875501704b931",
+  "archive_sha256": "fd1ac5cf114b0eff7ca8859dc0de9d93050f5be0093a334f4135067b6eef3d39",
+  "base_dev": {
+    "cases": 28,
+    "passed": 9
+  },
+  "candidate_dev": {
+    "cases": 28,
+    "passed": 26
+  },
+  "heldout": {
+    "cases": 28,
+    "passed": 26
+  },
+  "selection_metric_version": 2
+}

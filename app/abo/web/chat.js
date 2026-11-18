@@ -106,7 +106,7 @@ let categoryCountShown = pageSize;
 let detailRequest = 0;
 
 function remember() {
-  if (!active.messages.length) return;
+  if (!active.messages.length && !active.pending) return;
   active.updated = Date.now();
   threads = [active, ...threads.filter((item) => item.id !== active.id)];
   try {
@@ -208,6 +208,7 @@ async function send(text, visibleText = text) {
   renderChat();
   try {
     if (active.pending?.text !== text) active.pending = {text, id: crypto.randomUUID().replaceAll('-', '')};
+    remember();
     const row = await post('/chat', {question: text, session_id: cloud ? remote.id : active.session || null,
       mode: active.mode, thread_id: active.id, request_id: active.pending.id, history: active.messages.slice(0, -1)});
     delete active.pending;
