@@ -109,6 +109,14 @@ class WebChangesTests(unittest.TestCase):
         )
         self.assertEqual([c["choice"] for c in cards], [1, 2])
         self.assertIsNone(cards[0]["image"])
+        selected = catalog.chat_cards(
+            {
+                "decision": "answer",
+                "catalog_items": [{"listing_key": "B082L9GWG4@amazon.in"}],
+                "candidate_positions": {"B082L9GWG4@amazon.in": 3},
+            }
+        )
+        self.assertEqual(selected[0]["choice"], 3)
 
     def test_relaxation_is_per_dimension_and_not_an_age_guarantee(self):
         from app.abo.turns import released_requirements
@@ -145,6 +153,22 @@ class WebChangesTests(unittest.TestCase):
                     json.dumps(named_constraints("不要" + material)),
                 )
             )
+
+    def test_missing_color_is_not_colorless_and_user_preference_is_not_evidence(self):
+        from app.abo.turns import validate_display_claims
+
+        facts = [
+            {
+                "title": "mug",
+                "fields": {"material": ["Ceramic"]},
+                "requirements": {"constraints": ["透明"]},
+            }
+        ]
+        for answer in ("这款杯子是无色的", "这款是透明杯"):
+            with self.assertRaises(ValueError):
+                validate_display_claims(answer, facts)
+        validate_display_claims("资料没有说明颜色，不能确认透明。", facts)
+        validate_display_claims("这款是透明杯", [{"title": "Clear mug", "fields": {}}])
 
     def test_released_filter_triggers_search_even_when_planner_only_says_advice(self):
         from app.abo.turns import complete_plan
@@ -214,9 +238,14 @@ class WebChangesTests(unittest.TestCase):
                     patch.object(chat.app.reader, "ensure_reader", return_value=reader),
                 ):
                     row = chat.respond("给我介绍第三款商品")
+                    photo = chat.respond("看看第三款图片")
                 self.assertEqual(row["citations"], [products[2]["listing_key"] + ":metadata"])
                 self.assertIn("第3款", row["display_answer"])
                 self.assertEqual(row["candidate_positions"][products[2]["listing_key"]], 3)
+                self.assertEqual(photo["candidate_positions"][products[2]["listing_key"]], 3)
+                self.assertEqual(
+                    photo["catalog_items"][0]["listing_key"], products[2]["listing_key"]
+                )
 
     def test_empty_search_does_not_let_model_invent_material_or_color_claims(self):
         chat = AboDialogue(self.root / "no-evidence")

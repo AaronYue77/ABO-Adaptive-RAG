@@ -173,5 +173,7 @@ class WebCatalog:
                 )
             }
         return [
-            {**by_key[key], "choice": index} for index, key in enumerate(keys, 1) if key in by_key
+            {**by_key[key], "choice": row.get("candidate_positions", {}).get(key, index)}
+            for index, key in enumerate(keys, 1)
+            if key in by_key
         ]

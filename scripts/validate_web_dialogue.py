@@ -38,6 +38,10 @@ def verify(chat):
         row = ask(basketball, "推荐几款篮球，给我看图片")
         items = row.get("catalog_items", [])
         assert len(items) >= 3, "Basketball search did not return three candidates"
+        assert all(
+            row["candidate_positions"][item["listing_key"]] == index
+            for index, item in enumerate(items, 1)
+        )
         expected = items[2]["listing_key"]
         row = ask(basketball, "给我介绍一下第三款篮球")
         assert expected + ":metadata" in row["citations"], row["citations"]
@@ -79,6 +83,9 @@ def verify(chat):
             for trace in traces
         ), traces
         assert all(item["model_executed"] for item in checks), checks
+        assert "是无色" not in row["display_answer"] and "是透明" not in row["display_answer"], row[
+            "display_answer"
+        ]
         result = {
             "status": "passed",
             "turns": len(checks),
